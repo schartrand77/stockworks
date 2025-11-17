@@ -1,8 +1,6 @@
 """SQLModel models for the StockWorks domain."""
-from __future__ import annotations
-
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -20,7 +18,7 @@ class MaterialBase(SQLModel):
 
 class Material(MaterialBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    inventory_items: list["InventoryItem"] = Relationship(back_populates="material")
+    inventory_items: List["InventoryItem"] = Relationship(back_populates="material")
 
 
 class MaterialCreate(MaterialBase):
@@ -55,7 +53,7 @@ class InventoryItem(InventoryItemBase, table=True):
     material_id: int = Field(foreign_key="material.id")
 
     material: Optional[Material] = Relationship(back_populates="inventory_items")
-    movements: list["StockMovement"] = Relationship(back_populates="inventory_item")
+    movements: List["StockMovement"] = Relationship(back_populates="inventory_item")
 
 
 class InventoryItemCreate(InventoryItemBase):
