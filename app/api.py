@@ -14,6 +14,13 @@ from sqlmodel import Session, select
 
 from .db import get_session, init_db
 from .models import (
+    HardwareItem,
+    HardwareItemCreate,
+    HardwareItemRead,
+    HardwareItemUpdate,
+    HardwareMovement,
+    HardwareMovementCreate,
+    HardwareMovementRead,
     InventoryItem,
     InventoryItemCreate,
     InventoryItemRead,
@@ -184,6 +191,80 @@ def list_movements(item_id: int, session: Session = Depends(get_session)):
     return movements
 
 
+# Hardware endpoints
+@app.post("/hardware", response_model=HardwareItemRead, status_code=status.HTTP_201_CREATED)
+def create_hardware_item(payload: HardwareItemCreate, session: Session = Depends(get_session)):
+    item = HardwareItem.from_orm(payload)
+    session.add(item)
+    session.commit()
+    session.refresh(item)
+    return item
+
+
+@app.get("/hardware", response_model=List[HardwareItemRead])
+def list_hardware_items(session: Session = Depends(get_session)):
+    statement = select(HardwareItem).order_by(HardwareItem.name)
+    return session.exec(statement).all()
+
+
+@app.get("/hardware/{hardware_id}", response_model=HardwareItemRead)
+def get_hardware_item(hardware_id: int, session: Session = Depends(get_session)):
+    item = session.get(HardwareItem, hardware_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Hardware item not found")
+    return item
+
+
+@app.put("/hardware/{hardware_id}", response_model=HardwareItemRead)
+def update_hardware_item(hardware_id: int, payload: HardwareItemUpdate, session: Session = Depends(get_session)):
+    item = session.get(HardwareItem, hardware_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Hardware item not found")
+    update_data = payload.dict(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(item, key, value)
+    session.add(item)
+    session.commit()
+    session.refresh(item)
+    return item
+
+
+@app.delete("/hardware/{hardware_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_hardware_item(hardware_id: int, session: Session = Depends(get_session)):
+    item = session.get(HardwareItem, hardware_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Hardware item not found")
+    session.delete(item)
+    session.commit()
+    return None
+
+
+@app.post("/hardware/movements", response_model=HardwareMovementRead, status_code=status.HTTP_201_CREATED)
+def create_hardware_movement(payload: HardwareMovementCreate, session: Session = Depends(get_session)):
+    item = session.get(HardwareItem, payload.hardware_item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Hardware item not found")
+    new_qty = item.quantity_on_hand + payload.change_units
+    if new_qty < 0:
+        raise HTTPException(status_code=400, detail="Stock level cannot be negative")
+    movement = HardwareMovement.from_orm(payload)
+    item.quantity_on_hand = new_qty
+    session.add(item)
+    session.add(movement)
+    session.commit()
+    session.refresh(movement)
+    return movement
+
+
+@app.get("/hardware/{hardware_id}/movements", response_model=List[HardwareMovementRead])
+def list_hardware_movements(hardware_id: int, session: Session = Depends(get_session)):
+    _ensure_hardware_exists(session, hardware_id)
+    statement = select(HardwareMovement).where(HardwareMovement.hardware_item_id == hardware_id).order_by(
+        HardwareMovement.created_at.desc()
+    )
+    return session.exec(statement).all()
+
+
 # Pricing endpoint
 @app.post("/pricing/quote", response_model=PricingResponse)
 def calculate_quote(payload: PricingRequest, session: Session = Depends(get_session)):
@@ -222,3 +303,8 @@ def _ensure_material_exists(session: Session, material_id: int) -> None:
 def _ensure_inventory_exists(session: Session, item_id: int) -> None:
     if not session.get(InventoryItem, item_id):
         raise HTTPException(status_code=404, detail="Inventory item not found")
+
+
+def _ensure_hardware_exists(session: Session, hardware_id: int) -> None:
+    if not session.get(HardwareItem, hardware_id):
+        raise HTTPException(status_code=404, detail="Hardware item not found")

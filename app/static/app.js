@@ -1,9 +1,12 @@
 const state = {
   materials: [],
   inventory: [],
+  hardware: [],
   currentMaterialId: null,
   currentInventoryId: null,
   currentMovementItemId: null,
+  currentHardwareId: null,
+  currentHardwareMovementId: null,
 };
 
 const messageEl = document.getElementById("message");
@@ -43,6 +46,26 @@ const inventoryClearBtn = document.getElementById("inventory-clear");
 const inventoryRefreshBtn = document.getElementById("inventory-refresh");
 const inventoryDeleteBtn = document.getElementById("inventory-delete");
 
+// Hardware references
+const hardwareForm = document.getElementById("hardware-form");
+const hardwareIdInput = document.getElementById("hardware-id");
+const hardwareFields = {
+  name: document.getElementById("hardware-name"),
+  category: document.getElementById("hardware-category"),
+  supplier: document.getElementById("hardware-supplier"),
+  manufacturer_part_number: document.getElementById("hardware-mpn"),
+  unit_of_measure: document.getElementById("hardware-unit"),
+  unit_cost: document.getElementById("hardware-unit-cost"),
+  quantity_on_hand: document.getElementById("hardware-quantity"),
+  reorder_level: document.getElementById("hardware-reorder"),
+  bin_location: document.getElementById("hardware-bin"),
+  notes: document.getElementById("hardware-notes"),
+};
+const hardwareTableBody = document.querySelector("#hardware-table tbody");
+const hardwareClearBtn = document.getElementById("hardware-clear");
+const hardwareRefreshBtn = document.getElementById("hardware-refresh");
+const hardwareDeleteBtn = document.getElementById("hardware-delete");
+
 // Movements
 const movementForm = document.getElementById("movement-form");
 const movementInventorySelect = document.getElementById("movement-inventory");
@@ -51,6 +74,14 @@ const movementChangeInput = document.getElementById("movement-change");
 const movementReferenceInput = document.getElementById("movement-reference");
 const movementNoteInput = document.getElementById("movement-note");
 const movementTableBody = document.querySelector("#movement-table tbody");
+
+const hardwareMovementForm = document.getElementById("hardware-movement-form");
+const hardwareMovementSelect = document.getElementById("hardware-movement-item");
+const hardwareMovementType = document.getElementById("hardware-movement-type");
+const hardwareMovementChange = document.getElementById("hardware-movement-change");
+const hardwareMovementReference = document.getElementById("hardware-movement-reference");
+const hardwareMovementNote = document.getElementById("hardware-movement-note");
+const hardwareMovementTableBody = document.querySelector("#hardware-movement-table tbody");
 
 // Pricing
 const pricingForm = document.getElementById("pricing-form");
@@ -73,8 +104,10 @@ function bindEvents() {
   refreshAllBtn.addEventListener("click", refreshAll);
   materialRefreshBtn.addEventListener("click", () => safeAsync(loadMaterials));
   inventoryRefreshBtn.addEventListener("click", () => safeAsync(loadInventory));
+  hardwareRefreshBtn.addEventListener("click", () => safeAsync(loadHardware));
   materialClearBtn.addEventListener("click", resetMaterialForm);
   inventoryClearBtn.addEventListener("click", resetInventoryForm);
+  hardwareClearBtn.addEventListener("click", resetHardwareForm);
   materialDeleteBtn.addEventListener("click", () => {
     if (state.currentMaterialId) {
       deleteMaterial(state.currentMaterialId);
@@ -89,11 +122,20 @@ function bindEvents() {
       setMessage("Select an inventory row first.", "error");
     }
   });
+  hardwareDeleteBtn.addEventListener("click", () => {
+    if (state.currentHardwareId) {
+      deleteHardware(state.currentHardwareId);
+    } else {
+      setMessage("Select a hardware row first.", "error");
+    }
+  });
 
   materialForm.addEventListener("submit", handleMaterialSubmit);
   inventoryForm.addEventListener("submit", handleInventorySubmit);
+  hardwareForm.addEventListener("submit", handleHardwareSubmit);
   materialTableBody.addEventListener("click", handleMaterialRowClick);
   inventoryTableBody.addEventListener("click", handleInventoryRowClick);
+  hardwareTableBody.addEventListener("click", handleHardwareRowClick);
   movementInventorySelect.addEventListener("change", () => {
     const id = Number(movementInventorySelect.value);
     state.currentMovementItemId = Number.isFinite(id) ? id : null;
@@ -104,12 +146,22 @@ function bindEvents() {
     }
   });
   movementForm.addEventListener("submit", handleMovementSubmit);
+  hardwareMovementSelect.addEventListener("change", () => {
+    const id = Number(hardwareMovementSelect.value);
+    state.currentHardwareMovementId = Number.isFinite(id) ? id : null;
+    if (state.currentHardwareMovementId) {
+      safeAsync(() => loadHardwareMovements(state.currentHardwareMovementId));
+    } else {
+      renderHardwareMovements([]);
+    }
+  });
+  hardwareMovementForm.addEventListener("submit", handleHardwareMovementSubmit);
   pricingForm.addEventListener("submit", handlePricingSubmit);
 }
 
 async function refreshAll() {
   try {
-    await Promise.all([loadMaterials(), loadInventory()]);
+    await Promise.all([loadMaterials(), loadInventory(), loadHardware()]);
     setMessage("Data refreshed.", "success");
   } catch (error) {
     console.error(error);
@@ -143,6 +195,26 @@ async function loadInventory() {
       movementInventorySelect.value = "";
       state.currentMovementItemId = null;
       renderMovements([]);
+    }
+  }
+}
+
+async function loadHardware() {
+  const hardware = await api("/hardware");
+  state.hardware = hardware;
+  renderHardware();
+  populateHardwareOptions();
+  if (state.currentHardwareId && !hardware.some((item) => item.id === state.currentHardwareId)) {
+    resetHardwareForm();
+  }
+  if (state.currentHardwareMovementId) {
+    const stillExists = hardware.some((item) => item.id === state.currentHardwareMovementId);
+    if (stillExists) {
+      await loadHardwareMovements(state.currentHardwareMovementId);
+    } else {
+      hardwareMovementSelect.value = "";
+      state.currentHardwareMovementId = null;
+      renderHardwareMovements([]);
     }
   }
 }
@@ -202,6 +274,31 @@ function renderInventory() {
     .join("");
 }
 
+function renderHardware() {
+  if (!state.hardware.length) {
+    hardwareTableBody.innerHTML = `<tr><td colspan="8" class="muted">No hardware recorded yet.</td></tr>`;
+    return;
+  }
+  hardwareTableBody.innerHTML = state.hardware
+    .map(
+      (item) => `
+        <tr data-id="${item.id}">
+          <td>${escapeHtml(item.name)}</td>
+          <td>${escapeHtml(item.category || "")}</td>
+          <td>${escapeHtml(item.unit_of_measure)}</td>
+          <td>${Number(item.quantity_on_hand).toFixed(2)}</td>
+          <td>${Number(item.reorder_level).toFixed(2)}</td>
+          <td>${item.unit_cost ? `$${Number(item.unit_cost).toFixed(2)}` : "-"}</td>
+          <td>${escapeHtml(item.bin_location || "")}</td>
+          <td>
+            <button class="small-button" data-action="edit" data-id="${item.id}">Edit</button>
+            <button class="small-button danger" data-action="delete" data-id="${item.id}">Delete</button>
+          </td>
+        </tr>`
+    )
+    .join("");
+}
+
 function renderMovements(movements) {
   if (!movements.length) {
     const text = state.currentMovementItemId
@@ -252,6 +349,20 @@ function populateInventoryOptions() {
   }
 }
 
+function populateHardwareOptions() {
+  const options = state.hardware
+    .map((item) => {
+      const label = item.bin_location ? `${item.name} – ${item.bin_location}` : item.name;
+      return `<option value="${item.id}">${escapeHtml(label)}</option>`;
+    })
+    .join("");
+  const currentValue = hardwareMovementSelect.value;
+  hardwareMovementSelect.innerHTML = `<option value="">Select hardware item...</option>${options}`;
+  if (options && currentValue && state.hardware.some((i) => String(i.id) === currentValue)) {
+    hardwareMovementSelect.value = currentValue;
+  }
+}
+
 async function handleMaterialSubmit(event) {
   event.preventDefault();
   try {
@@ -282,6 +393,24 @@ async function handleInventorySubmit(event) {
     }
     await loadInventory();
     setMessage("Inventory saved.", "success");
+  } catch (error) {
+    console.error(error);
+    setMessage(error.message, "error");
+  }
+}
+
+async function handleHardwareSubmit(event) {
+  event.preventDefault();
+  try {
+    const payload = buildHardwarePayload();
+    if (!payload) return;
+    if (state.currentHardwareId) {
+      await api(`/hardware/${state.currentHardwareId}`, { method: "PUT", body: payload });
+    } else {
+      await api("/hardware", { method: "POST", body: payload });
+    }
+    await loadHardware();
+    setMessage("Hardware saved.", "success");
   } catch (error) {
     console.error(error);
     setMessage(error.message, "error");
@@ -371,6 +500,17 @@ function handleInventoryRowClick(event) {
   }
 }
 
+function handleHardwareRowClick(event) {
+  const button = event.target.closest("button[data-action]");
+  if (!button) return;
+  const id = Number(button.dataset.id);
+  if (button.dataset.action === "edit") {
+    startHardwareEdit(id);
+  } else if (button.dataset.action === "delete") {
+    deleteHardware(id);
+  }
+}
+
 function startMaterialEdit(id) {
   const material = state.materials.find((m) => m.id === id);
   if (!material) return;
@@ -402,6 +542,26 @@ function startInventoryEdit(id) {
   safeAsync(() => loadMovements(id));
 }
 
+function startHardwareEdit(id) {
+  const item = state.hardware.find((hardware) => hardware.id === id);
+  if (!item) return;
+  state.currentHardwareId = id;
+  hardwareIdInput.value = id;
+  hardwareFields.name.value = item.name;
+  hardwareFields.category.value = item.category || "";
+  hardwareFields.supplier.value = item.supplier || "";
+  hardwareFields.manufacturer_part_number.value = item.manufacturer_part_number || "";
+  hardwareFields.unit_of_measure.value = item.unit_of_measure;
+  hardwareFields.unit_cost.value = item.unit_cost ?? "";
+  hardwareFields.quantity_on_hand.value = item.quantity_on_hand;
+  hardwareFields.reorder_level.value = item.reorder_level;
+  hardwareFields.bin_location.value = item.bin_location || "";
+  hardwareFields.notes.value = item.notes || "";
+  hardwareMovementSelect.value = String(id);
+  state.currentHardwareMovementId = id;
+  safeAsync(() => loadHardwareMovements(id));
+}
+
 async function deleteMaterial(id) {
   if (!confirm("Delete this material? Make sure related inventory entries are removed first.")) {
     return;
@@ -430,6 +590,23 @@ async function deleteInventory(id) {
     }
     await loadInventory();
     setMessage("Inventory deleted.", "success");
+  } catch (error) {
+    console.error(error);
+    setMessage(error.message, "error");
+  }
+}
+
+async function deleteHardware(id) {
+  if (!confirm("Delete this hardware item and its movements?")) {
+    return;
+  }
+  try {
+    await api(`/hardware/${id}`, { method: "DELETE" });
+    if (state.currentHardwareId === id) {
+      resetHardwareForm();
+    }
+    await loadHardware();
+    setMessage("Hardware deleted.", "success");
   } catch (error) {
     console.error(error);
     setMessage(error.message, "error");
@@ -502,6 +679,41 @@ function buildInventoryPayload() {
   };
 }
 
+function buildHardwarePayload() {
+  const name = hardwareFields.name.value.trim();
+  if (!name) {
+    setMessage("Name is required for hardware.", "error");
+    return null;
+  }
+  const quantity = Number(hardwareFields.quantity_on_hand.value || 0);
+  const reorder = Number(hardwareFields.reorder_level.value || 0);
+  if (!Number.isFinite(quantity) || quantity < 0 || !Number.isFinite(reorder) || reorder < 0) {
+    setMessage("Quantities must be non-negative numbers.", "error");
+    return null;
+  }
+  const unitCostStr = hardwareFields.unit_cost.value;
+  let unitCost = null;
+  if (unitCostStr.trim() !== "") {
+    unitCost = Number(unitCostStr);
+    if (!Number.isFinite(unitCost) || unitCost < 0) {
+      setMessage("Unit cost must be a positive number.", "error");
+      return null;
+    }
+  }
+  return {
+    name,
+    category: optionalString(hardwareFields.category.value),
+    supplier: optionalString(hardwareFields.supplier.value),
+    manufacturer_part_number: optionalString(hardwareFields.manufacturer_part_number.value),
+    unit_of_measure: hardwareFields.unit_of_measure.value.trim() || "piece",
+    unit_cost: unitCost,
+    quantity_on_hand: quantity,
+    reorder_level: reorder,
+    bin_location: optionalString(hardwareFields.bin_location.value),
+    notes: optionalString(hardwareFields.notes.value),
+  };
+}
+
 function buildPricingPayload() {
   const materialValue = pricingFields.material_id.value;
   if (!materialValue) {
@@ -542,6 +754,77 @@ function resetInventoryForm() {
   inventoryForm.reset();
   inventoryIdInput.value = "";
   state.currentInventoryId = null;
+}
+
+function resetHardwareForm() {
+  hardwareForm.reset();
+  hardwareIdInput.value = "";
+  state.currentHardwareId = null;
+}
+
+async function loadHardwareMovements(itemId) {
+  const movements = await api(`/hardware/${itemId}/movements`);
+  renderHardwareMovements(movements);
+}
+
+function renderHardwareMovements(movements) {
+  if (!movements.length) {
+    const text = state.currentHardwareMovementId
+      ? "No hardware movements recorded."
+      : "Select a hardware item to view history.";
+    hardwareMovementTableBody.innerHTML = `<tr><td colspan="5" class="muted">${text}</td></tr>`;
+    return;
+  }
+  hardwareMovementTableBody.innerHTML = movements
+    .map(
+      (move) => `
+        <tr>
+          <td>${new Date(move.created_at).toLocaleString()}</td>
+          <td>${escapeHtml(move.movement_type)}</td>
+          <td>${Number(move.change_units).toFixed(2)}</td>
+          <td>${escapeHtml(move.reference || "")}</td>
+          <td>${escapeHtml(move.note || "")}</td>
+        </tr>`
+    )
+    .join("");
+}
+
+async function handleHardwareMovementSubmit(event) {
+  event.preventDefault();
+  try {
+    const itemId = Number(hardwareMovementSelect.value);
+    if (!Number.isFinite(itemId)) {
+      setMessage("Select a hardware item first.", "error");
+      return;
+    }
+    let change = Number(hardwareMovementChange.value);
+    if (!Number.isFinite(change) || change === 0) {
+      setMessage("Change value must be non-zero.", "error");
+      return;
+    }
+    if (hardwareMovementType.value === "incoming") {
+      change = Math.abs(change);
+    } else if (hardwareMovementType.value === "outgoing") {
+      change = -Math.abs(change);
+    }
+    const payload = {
+      hardware_item_id: itemId,
+      movement_type: hardwareMovementType.value,
+      change_units: change,
+      reference: optionalString(hardwareMovementReference.value),
+      note: optionalString(hardwareMovementNote.value),
+    };
+    await api("/hardware/movements", { method: "POST", body: payload });
+    hardwareMovementChange.value = "";
+    hardwareMovementReference.value = "";
+    hardwareMovementNote.value = "";
+    await loadHardware();
+    await loadHardwareMovements(itemId);
+    setMessage("Hardware movement logged.", "success");
+  } catch (error) {
+    console.error(error);
+    setMessage(error.message, "error");
+  }
 }
 
 function setMessage(text, variant = "info") {

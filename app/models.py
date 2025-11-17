@@ -121,3 +121,67 @@ class PricingBreakdown(SQLModel):
 class PricingResponse(SQLModel):
     pricing: PricingBreakdown
     material_snapshot: MaterialRead
+
+
+class HardwareItemBase(SQLModel):
+    name: str
+    category: Optional[str] = Field(default=None, description="E.g. magnets, inserts, screws")
+    supplier: Optional[str] = None
+    manufacturer_part_number: Optional[str] = Field(default=None, description="Vendor or manufacturer reference")
+    unit_of_measure: str = Field(default="piece", description="e.g. piece, set, pack")
+    unit_cost: float = Field(default=0, ge=0)
+    bin_location: Optional[str] = Field(default=None, description="Storage location reference")
+    reorder_level: float = Field(default=0, ge=0)
+    quantity_on_hand: float = Field(default=0, ge=0)
+    notes: Optional[str] = None
+
+
+class HardwareItem(HardwareItemBase, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    movements: List["HardwareMovement"] = Relationship(back_populates="hardware_item")
+
+
+class HardwareItemCreate(HardwareItemBase):
+    pass
+
+
+class HardwareItemUpdate(SQLModel):
+    name: Optional[str] = None
+    category: Optional[str] = None
+    supplier: Optional[str] = None
+    manufacturer_part_number: Optional[str] = None
+    unit_of_measure: Optional[str] = None
+    unit_cost: Optional[float] = Field(default=None, ge=0)
+    bin_location: Optional[str] = None
+    reorder_level: Optional[float] = Field(default=None, ge=0)
+    quantity_on_hand: Optional[float] = Field(default=None, ge=0)
+    notes: Optional[str] = None
+
+
+class HardwareItemRead(HardwareItemBase):
+    id: int
+
+
+class HardwareMovementBase(SQLModel):
+    movement_type: str = Field(description="incoming, outgoing, or adjustment")
+    change_units: float = Field(description="Positive for inbound, negative for outbound")
+    reference: Optional[str] = Field(default=None, description="PO, job, or ticket reference")
+    note: Optional[str] = None
+
+
+class HardwareMovement(HardwareMovementBase, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    hardware_item_id: int = Field(foreign_key="hardwareitem.id")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    hardware_item: Optional[HardwareItem] = Relationship(back_populates="movements")
+
+
+class HardwareMovementCreate(HardwareMovementBase):
+    hardware_item_id: int
+
+
+class HardwareMovementRead(HardwareMovementBase):
+    id: int
+    hardware_item_id: int
+    created_at: datetime

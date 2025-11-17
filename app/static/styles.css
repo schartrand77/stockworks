@@ -242,6 +242,14 @@ td .small-button {
   margin-top: 0.5rem;
 }
 
+.hardware-movements-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1.5rem;
+  margin-top: 1.5rem;
+  align-items: start;
+}
+
 @media (max-width: 640px) {
   .app-header {
     flex-direction: column;

@@ -3,8 +3,9 @@
 StockWorks is a browser-based inventory tool for 3D-printing studios. It combines filament/material management, spool-level inventory tracking, stock movement logging, and a quote builder inside a single-page interface served by FastAPI. A desktop (Tkinter) client is still available for operators who prefer an offline UI, and the underlying REST API remains open for automation.
 
 ## Highlights
-- **Web UI at `http://localhost:8000/`** – manage materials, inventory, movements, and quotes visually with no external tooling.
+- **Web UI at `http://localhost:8000/`** – manage filament, hardware, movements, and quotes visually with no external tooling.
 - **Persistent data** in `stockworks/data/app.db` (SQLite) that is shared across the web UI, API, and optional desktop client.
+- **Hardware coverage** for magnets, heat-set inserts, screws, and any other non-filament consumables, including movement history.
 - **Full REST API** for integrations, automation, or bulk operations. Swagger docs live at `/docs`.
 - **Optional desktop GUI** (`python -m app.gui`) built with Tkinter for teams that want a native-feeling app.
 
@@ -20,7 +21,7 @@ StockWorks is a browser-based inventory tool for 3D-printing studios. It combine
    ```bash
    uvicorn app.api:app --reload
    ```
-3. Open [http://localhost:8000/](http://localhost:8000/) to use the GUI. All CRUD actions call the existing API under the hood.
+3. Open [http://localhost:8000/](http://localhost:8000/) to use the GUI; the dashboard now covers filament spools, hardware bins, movement logs, and quoting – all powered by the same API.
 
 ### Docker Compose (alternative runtime)
 From the repository root (the directory that contains `docker-compose.yml`), run:
