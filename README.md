@@ -1,15 +1,14 @@
 # StockWorks Inventory App
 
-StockWorks is now a standalone desktop application for managing filament materials, tracking inventory per spool/location, logging movements, and producing quick price quotes. A FastAPI backend is still provided for automation or integrations, but the primary experience is a Tkinter GUI.
+StockWorks is a browser-based inventory tool for 3D-printing studios. It combines filament/material management, spool-level inventory tracking, stock movement logging, and a quote builder inside a single-page interface served by FastAPI. A desktop (Tkinter) client is still available for operators who prefer an offline UI, and the underlying REST API remains open for automation.
 
-## Features
-- Visual material catalog with supplier/brand metadata and free-form notes.
-- Inventory editor that keeps quantities, reorder points, and spool metadata in sync with a persistent SQLite database.
-- Movement logging (incoming, outgoing, adjustments) with immediate impact on quantity and a built-in audit trail.
-- Quote builder that calculates price breakdowns based on material usage, machine time, labor, and margin.
-- Optional FastAPI service (via Docker or uvicorn) to integrate with other systems.
+## Highlights
+- **Web UI at `http://localhost:8000/`** – manage materials, inventory, movements, and quotes visually with no external tooling.
+- **Persistent data** in `stockworks/data/app.db` (SQLite) that is shared across the web UI, API, and optional desktop client.
+- **Full REST API** for integrations, automation, or bulk operations. Swagger docs live at `/docs`.
+- **Optional desktop GUI** (`python -m app.gui`) built with Tkinter for teams that want a native-feeling app.
 
-## Desktop App (default experience)
+## Run the web application
 1. Create/activate a virtual environment and install dependencies:
    ```bash
    python -m venv .venv
@@ -17,43 +16,35 @@ StockWorks is now a standalone desktop application for managing filament materia
    # source .venv/bin/activate     # macOS/Linux
    pip install -r requirements.txt
    ```
-2. Launch the GUI:
+2. Launch the FastAPI app (which now serves the SPA and the REST endpoints):
    ```bash
-   python -m app.main
+   uvicorn app.api:app --reload
    ```
-   The app stores data at `stockworks/data/app.db` by default so your changes persist between sessions.
+3. Open [http://localhost:8000/](http://localhost:8000/) to use the GUI. All CRUD actions call the existing API under the hood.
 
-## Optional FastAPI service
-If you still need the HTTP API (for integrations or remote access) you can run the same backend the GUI uses.
-
-### Docker Compose (recommended)
+### Docker Compose (alternative runtime)
 From the repository root (the directory that contains `docker-compose.yml`), run:
 ```bash
 docker compose up --build
 ```
-The compose file builds the image, maps port `8000`, and mounts `stockworks/data/` as a persistent SQLite volume. Stop it with `docker compose down`.
-
-Override configuration with standard environment variables (for example `DATABASE_URL`) by adding them to a `.env` file or passing `-e` flags when running `docker compose`.
+The compose file builds the image, maps port `8000`, and mounts `stockworks/data/` as a persistent SQLite volume. Stop it with `docker compose down`. Override configuration with standard environment variables (for example `DATABASE_URL`) via `.env` or `-e` flags.
 
 ### Manual Docker build/run
-1. Build the image:
-   ```bash
-   docker build -t stockworks .
-   ```
-2. Run the container:
-   ```bash
-   docker run -p 8000:8000 -v $(pwd)/stockworks/data:/app/data stockworks
-   ```
-   Mounting the `stockworks/data/` directory keeps the SQLite database persistent on the host.
-
-### Local uvicorn
 ```bash
-uvicorn app.api:app --reload
+docker build -t stockworks .
+docker run -p 8000:8000 -v $(pwd)/stockworks/data:/app/data stockworks
 ```
-Interactive docs remain available at [http://localhost:8000/docs](http://localhost:8000/docs).
 
-## Configuration
-- `DATABASE_URL`: optional custom database URL. Defaults to `sqlite:///data/app.db`.
-- GUI and API read the same configuration and share the same database file.
+## Desktop GUI (optional)
+The Tkinter client is still available if you prefer a native desktop workflow:
+```bash
+python -m app.gui
+```
+It reads and writes the same SQLite database as the web version, so you can mix and match.
+
+## API & configuration
+- Base URL: `http://localhost:8000`
+- Docs/Playground: `http://localhost:8000/docs`
+- `DATABASE_URL`: optional override. Defaults to `sqlite:///data/app.db`.
 
 Run tests or formatting tools of your choice as needed.

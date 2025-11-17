@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>StockWorks Inventory</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div>
+        <h1>StockWorks Inventory</h1>
+        <p>Manage filament materials, inventory, stock movements, and pricing.</p>
+      </div>
+      <div class="header-actions">
+        <button id="refresh-all" type="button">Refresh all data</button>
+      </div>
+    </header>
+
+    <main class="app-grid">
+      <div id="message" class="message" role="status" aria-live="polite"></div>
+
+      <section class="card" id="materials-section">
+        <div class="card-header">
+          <div>
+            <h2>Materials</h2>
+            <p>Define filament attributes and default pricing.</p>
+          </div>
+          <div class="card-actions">
+            <button id="material-clear" type="button">Clear form</button>
+            <button id="material-refresh" type="button">Refresh list</button>
+          </div>
+        </div>
+        <div class="card-body two-columns">
+          <form id="material-form" class="stack">
+            <input type="hidden" id="material-id" />
+            <label>
+              Name
+              <input type="text" id="material-name" required placeholder="PLA - Black" />
+            </label>
+            <label>
+              Filament type
+              <input type="text" id="material-type" required placeholder="PLA, PETG, ABS..." />
+            </label>
+            <label>
+              Color
+              <input type="text" id="material-color" required placeholder="Black" />
+            </label>
+            <label>
+              Supplier
+              <input type="text" id="material-supplier" placeholder="Optional" />
+            </label>
+            <label>
+              Brand
+              <input type="text" id="material-brand" placeholder="Optional" />
+            </label>
+            <label>
+              Price per gram (USD)
+              <input type="number" step="0.0001" min="0" id="material-price" required />
+            </label>
+            <label>
+              Spool weight (grams)
+              <input type="number" min="1" id="material-spool" required />
+            </label>
+            <label>
+              Notes
+              <textarea id="material-notes" rows="3" placeholder="Special handling, storage tips..."></textarea>
+            </label>
+            <div class="form-actions">
+              <button type="submit">Save material</button>
+              <button type="button" id="material-delete" class="danger">Delete</button>
+            </div>
+          </form>
+
+          <div class="table-wrapper">
+            <table id="materials-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Type</th>
+                  <th>Color</th>
+                  <th>Price/g</th>
+                  <th>Spool (g)</th>
+                  <th>Supplier</th>
+                  <th>Brand</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" id="inventory-section">
+        <div class="card-header">
+          <div>
+            <h2>Inventory</h2>
+            <p>Track spool locations, quantities, and reorder points.</p>
+          </div>
+          <div class="card-actions">
+            <button id="inventory-clear" type="button">Clear form</button>
+            <button id="inventory-refresh" type="button">Refresh list</button>
+          </div>
+        </div>
+        <div class="card-body two-columns">
+          <form id="inventory-form" class="stack">
+            <input type="hidden" id="inventory-id" />
+            <label>
+              Material
+              <select id="inventory-material" required>
+                <option value="">Select material...</option>
+              </select>
+            </label>
+            <label>
+              Location
+              <input type="text" id="inventory-location" required placeholder="Rack A - Bin 1" />
+            </label>
+            <label>
+              Quantity (grams)
+              <input type="number" min="0" step="0.01" id="inventory-quantity" required />
+            </label>
+            <label>
+              Reorder level (grams)
+              <input type="number" min="0" step="0.01" id="inventory-reorder" required />
+            </label>
+            <label>
+              Spool serial
+              <input type="text" id="inventory-serial" placeholder="Optional" />
+            </label>
+            <label>
+              Unit cost override
+              <input type="number" min="0" step="0.0001" id="inventory-cost" placeholder="Optional" />
+            </label>
+            <div class="form-actions">
+              <button type="submit">Save inventory</button>
+              <button type="button" id="inventory-delete" class="danger">Delete</button>
+            </div>
+          </form>
+          <div class="table-wrapper">
+            <table id="inventory-table">
+              <thead>
+                <tr>
+                  <th>Material</th>
+                  <th>Location</th>
+                  <th>Qty (g)</th>
+                  <th>Reorder</th>
+                  <th>Serial</th>
+                  <th>Unit cost</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" id="movement-section">
+        <div class="card-header">
+          <div>
+            <h2>Stock Movements</h2>
+            <p>Log usage, receipts, or adjustments, and view history.</p>
+          </div>
+        </div>
+        <div class="card-body two-columns">
+          <form id="movement-form" class="stack">
+            <label>
+              Inventory item
+              <select id="movement-inventory" required>
+                <option value="">Select inventory item...</option>
+              </select>
+            </label>
+            <label>
+              Movement type
+              <select id="movement-type">
+                <option value="incoming">Incoming</option>
+                <option value="outgoing">Outgoing</option>
+                <option value="adjustment">Adjustment</option>
+              </select>
+            </label>
+            <label>
+              Change (grams)
+              <input type="number" step="0.01" id="movement-change" required />
+            </label>
+            <label>
+              Reference
+              <input type="text" id="movement-reference" placeholder="JOB-1001, PO-55..." />
+            </label>
+            <label>
+              Note
+              <input type="text" id="movement-note" placeholder="Optional comment" />
+            </label>
+            <button type="submit">Log movement</button>
+          </form>
+          <div class="table-wrapper">
+            <table id="movement-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Type</th>
+                  <th>Change (g)</th>
+                  <th>Reference</th>
+                  <th>Note</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td colspan="5" class="muted">Select an inventory item to view history.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" id="pricing-section">
+        <div class="card-header">
+          <div>
+            <h2>Quote Builder</h2>
+            <p>Create a customer-facing price breakdown.</p>
+          </div>
+        </div>
+        <div class="card-body quote-grid">
+          <form id="pricing-form" class="stack">
+            <label>
+              Material
+              <select id="pricing-material" required>
+                <option value="">Select material...</option>
+              </select>
+            </label>
+            <label>
+              Weight (grams)
+              <input type="number" step="0.01" min="0" id="pricing-weight" required />
+            </label>
+            <label>
+              Print time (hours)
+              <input type="number" step="0.1" min="0" id="pricing-hours" required />
+            </label>
+            <label>
+              Machine hour rate (USD)
+              <input type="number" step="0.01" min="0" id="pricing-machine" required />
+            </label>
+            <label>
+              Labor cost (USD)
+              <input type="number" step="0.01" min="0" id="pricing-labor" value="0" />
+            </label>
+            <label>
+              Margin (%)
+              <input type="number" step="1" min="0" id="pricing-margin" value="30" />
+            </label>
+            <button type="submit">Calculate quote</button>
+          </form>
+          <div class="quote-result" id="pricing-result">
+            <p class="muted">Fill out the form to see the breakdown.</p>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/static/app.js"></script>
+  </body>
+</html>

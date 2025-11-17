@@ -2,10 +2,14 @@
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 from typing import List
 
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select
 
 from .db import get_session, init_db
@@ -26,6 +30,9 @@ from .models import (
     StockMovementRead,
 )
 
+BASE_DIR = Path(__file__).resolve().parent
+templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+
 app = FastAPI(title="StockWorks", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
@@ -34,11 +41,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 
 
 @app.on_event("startup")
 def on_startup() -> None:
     init_db()
+
+
+@app.get("/", response_class=HTMLResponse)
+def root(request: Request):
+    """Serve the HTML shell for the single-page UI."""
+    return templates.TemplateResponse("index.html", {"request": request})
 
 
 # Material endpoints
