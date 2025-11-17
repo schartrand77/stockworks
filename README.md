@@ -1,94 +1,59 @@
-# StockWorks Inventory Service
+# StockWorks Inventory App
 
-StockWorks is a FastAPI-powered backend used to control inventory, stock movements, and quoting for a 3D printing service. It exposes endpoints for managing raw materials, tracking spool inventory, logging every movement, and generating customer-facing price estimates.
+StockWorks is now a standalone desktop application for managing filament materials, tracking inventory per spool/location, logging movements, and producing quick price quotes. A FastAPI backend is still provided for automation or integrations, but the primary experience is a Tkinter GUI.
 
 ## Features
-- CRUD endpoints for filament materials with cost and supplier metadata.
-- Inventory management for each spool/location with reorder levels and custom cost overrides.
-- Stock movement tracking (incoming, outgoing, adjustments) that automatically updates on-hand quantities.
-- Quoting endpoint that combines material cost, machine time, labor, and margin into a detailed breakdown.
-- Dockerized for repeatable deployments.
+- Visual material catalog with supplier/brand metadata and free-form notes.
+- Inventory editor that keeps quantities, reorder points, and spool metadata in sync with a persistent SQLite database.
+- Movement logging (incoming, outgoing, adjustments) with immediate impact on quantity and a built-in audit trail.
+- Quote builder that calculates price breakdowns based on material usage, machine time, labor, and margin.
+- Optional FastAPI service (via Docker or uvicorn) to integrate with other systems.
 
-## Getting Started
-### Option A: Docker Compose (recommended)
+## Desktop App (default experience)
+1. Create/activate a virtual environment and install dependencies:
+   ```bash
+   python -m venv .venv
+   .\.venv\Scripts\activate        # Windows PowerShell
+   # source .venv/bin/activate     # macOS/Linux
+   pip install -r requirements.txt
+   ```
+2. Launch the GUI:
+   ```bash
+   python -m app.main
+   ```
+   The app stores data at `stockworks/data/app.db` by default so your changes persist between sessions.
+
+## Optional FastAPI service
+If you still need the HTTP API (for integrations or remote access) you can run the same backend the GUI uses.
+
+### Docker Compose (recommended)
+From the repository root (the directory that contains `docker-compose.yml`), run:
 ```bash
 docker compose up --build
 ```
-The compose file builds the image, maps port `8000`, and mounts `data/` as a persistent SQLite volume. Stop it with `docker compose down`.
+The compose file builds the image, maps port `8000`, and mounts `stockworks/data/` as a persistent SQLite volume. Stop it with `docker compose down`.
 
 Override configuration with standard environment variables (for example `DATABASE_URL`) by adding them to a `.env` file or passing `-e` flags when running `docker compose`.
 
-### Option B: Manual Docker build/run
+### Manual Docker build/run
 1. Build the image:
    ```bash
    docker build -t stockworks .
    ```
 2. Run the container:
    ```bash
-   docker run -p 8000:8000 -v $(pwd)/data:/app/data stockworks
+   docker run -p 8000:8000 -v $(pwd)/stockworks/data:/app/data stockworks
    ```
-   Mounting the `data/` directory keeps the SQLite database persistent on the host.
+   Mounting the `stockworks/data/` directory keeps the SQLite database persistent on the host.
 
-### Explore the API
-The FastAPI docs are available at [http://localhost:8000/docs](http://localhost:8000/docs).
-
-Example requests using `curl`:
+### Local uvicorn
 ```bash
-# Create a material
-curl -X POST http://localhost:8000/materials \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "name": "PLA - Black",
-    "filament_type": "PLA",
-    "color": "Black",
-    "price_per_gram": 0.05,
-    "spool_weight_grams": 1000
-  }'
-
-# Create an inventory spool based on that material (material_id=1)
-curl -X POST http://localhost:8000/inventory \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "material_id": 1,
-    "location": "Rack A - Bin 1",
-    "quantity_grams": 750,
-    "reorder_level": 200
-  }'
-
-# Log a movement (consuming 50 g for a job)
-curl -X POST http://localhost:8000/movements \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "inventory_item_id": 1,
-    "movement_type": "outgoing",
-    "change_grams": -50,
-    "reference": "JOB-1001"
-  }'
-
-# Request a quote
-curl -X POST http://localhost:8000/pricing/quote \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "material_id": 1,
-    "weight_grams": 120,
-    "print_time_hours": 6,
-    "machine_hour_rate": 12,
-    "labor_cost": 8,
-    "margin_pct": 35
-  }'
+uvicorn app.api:app --reload
 ```
+Interactive docs remain available at [http://localhost:8000/docs](http://localhost:8000/docs).
 
 ## Configuration
 - `DATABASE_URL`: optional custom database URL. Defaults to `sqlite:///data/app.db`.
-- All endpoints accept and return JSON payloads documented via the `/docs` OpenAPI schema.
-
-## Development
-Install dependencies and launch the server locally:
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload
-```
+- GUI and API read the same configuration and share the same database file.
 
 Run tests or formatting tools of your choice as needed.
