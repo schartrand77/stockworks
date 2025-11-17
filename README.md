@@ -10,18 +10,26 @@ StockWorks is a FastAPI-powered backend used to control inventory, stock movemen
 - Dockerized for repeatable deployments.
 
 ## Getting Started
-### 1. Build the image
+### Option A: Docker Compose (recommended)
 ```bash
-docker build -t stockworks .
+docker compose up --build
 ```
+The compose file builds the image, maps port `8000`, and mounts `data/` as a persistent SQLite volume. Stop it with `docker compose down`.
 
-### 2. Run the container
-```bash
-docker run -p 8000:8000 -v $(pwd)/data:/app/data stockworks
-```
-Mounting the `data/` directory keeps the SQLite database persistent on the host.
+Override configuration with standard environment variables (for example `DATABASE_URL`) by adding them to a `.env` file or passing `-e` flags when running `docker compose`.
 
-### 3. Explore the API
+### Option B: Manual Docker build/run
+1. Build the image:
+   ```bash
+   docker build -t stockworks .
+   ```
+2. Run the container:
+   ```bash
+   docker run -p 8000:8000 -v $(pwd)/data:/app/data stockworks
+   ```
+   Mounting the `data/` directory keeps the SQLite database persistent on the host.
+
+### Explore the API
 The FastAPI docs are available at [http://localhost:8000/docs](http://localhost:8000/docs).
 
 Example requests using `curl`:
