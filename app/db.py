@@ -8,7 +8,21 @@ from typing import Iterator
 
 from sqlmodel import Session, SQLModel, create_engine
 
-DEFAULT_SQLITE_PATH = Path("data") / "app.db"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _resolve_data_dir() -> Path:
+    """Return the directory that stores the SQLite database."""
+    configured_dir = os.environ.get("STOCKWORKS_DATA_DIR")
+    if configured_dir:
+        path = Path(configured_dir)
+        if not path.is_absolute():
+            path = PROJECT_ROOT / path
+        return path
+    return PROJECT_ROOT / "data"
+
+
+DEFAULT_SQLITE_PATH = (_resolve_data_dir() / os.environ.get("STOCKWORKS_DB_FILENAME", "app.db")).resolve()
 
 
 def _build_database_url() -> str:

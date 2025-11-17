@@ -1,0 +1,72 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>StockWorks</Name>
+  <Repository>stockworks:latest</Repository>
+  <Registry>https://github.com/steph/stockworks</Registry>
+  <Network>bridge</Network>
+  <Shell>bash</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/steph/stockworks/issues</Support>
+  <Project>https://github.com/steph/stockworks</Project>
+  <Overview>StockWorks is a FastAPI-powered inventory and quoting tool for 3D-printing studios.</Overview>
+  <Category>Productivity:Tools;Inventory:Management</Category>
+  <WebUI>http://[IP]:[PORT:8000]/</WebUI>
+  <TemplateURL></TemplateURL>
+  <Icon></Icon>
+  <ExtraParams>--restart unless-stopped</ExtraParams>
+  <PostArgs></PostArgs>
+  <CPUset></CPUset>
+  <Description>StockWorks offers a combined material tracker, hardware inventory, movement log, and quote builder through a single-page app backed by FastAPI.</Description>
+  <Networking>
+    <Mode>bridge</Mode>
+    <Publish>
+      <Port>
+        <HostPort>8000</HostPort>
+        <ContainerPort>8000</ContainerPort>
+        <Protocol>tcp</Protocol>
+      </Port>
+    </Publish>
+  </Networking>
+  <Environment>
+    <Variable>
+      <Name>PUID</Name>
+      <Value>99</Value>
+      <Description>User ID that should own the /data volume.</Description>
+      <Display>advanced-hide</Display>
+      <Required>true</Required>
+      <Mask>false</Mask>
+    </Variable>
+    <Variable>
+      <Name>PGID</Name>
+      <Value>100</Value>
+      <Description>Group ID that should own the /data volume.</Description>
+      <Display>advanced-hide</Display>
+      <Required>true</Required>
+      <Mask>false</Mask>
+    </Variable>
+    <Variable>
+      <Name>TZ</Name>
+      <Value>UTC</Value>
+      <Description>Timezone used for the application logs.</Description>
+      <Display>always</Display>
+      <Required>true</Required>
+      <Mask>false</Mask>
+    </Variable>
+    <Variable>
+      <Name>STOCKWORKS_DATA_DIR</Name>
+      <Value>/data</Value>
+      <Description>Path inside the container mapped to your persistent SQLite storage.</Description>
+      <Display>advanced-hide</Display>
+      <Required>true</Required>
+      <Mask>false</Mask>
+    </Variable>
+  </Environment>
+  <Data>
+    <Volume>
+      <HostDir>/mnt/user/appdata/stockworks</HostDir>
+      <ContainerDir>/data</ContainerDir>
+      <Mode>rw</Mode>
+      <Description>Persistent SQLite database and attachments.</Description>
+    </Volume>
+  </Data>
+</Container>
