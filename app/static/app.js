@@ -83,19 +83,8 @@ const hardwareMovementReference = document.getElementById("hardware-movement-ref
 const hardwareMovementNote = document.getElementById("hardware-movement-note");
 const hardwareMovementTableBody = document.querySelector("#hardware-movement-table tbody");
 
-// Pricing
-const pricingForm = document.getElementById("pricing-form");
-const pricingFields = {
-  material_id: document.getElementById("pricing-material"),
-  weight_grams: document.getElementById("pricing-weight"),
-  print_time_hours: document.getElementById("pricing-hours"),
-  machine_hour_rate: document.getElementById("pricing-machine"),
-  labor_cost: document.getElementById("pricing-labor"),
-  margin_pct: document.getElementById("pricing-margin"),
-};
-const pricingResult = document.getElementById("pricing-result");
-
 document.addEventListener("DOMContentLoaded", () => {
+  initCollapsibleCards();
   bindEvents();
   refreshAll();
 });
@@ -156,7 +145,24 @@ function bindEvents() {
     }
   });
   hardwareMovementForm.addEventListener("submit", handleHardwareMovementSubmit);
-  pricingForm.addEventListener("submit", handlePricingSubmit);
+}
+
+function initCollapsibleCards() {
+  document.querySelectorAll(".card").forEach((card) => {
+    const toggle = card.querySelector(".card-toggle");
+    if (!toggle) return;
+    updateCardToggleState(card, toggle);
+    toggle.addEventListener("click", () => {
+      card.classList.toggle("collapsed");
+      updateCardToggleState(card, toggle);
+    });
+  });
+}
+
+function updateCardToggleState(card, toggle) {
+  const expanded = !card.classList.contains("collapsed");
+  toggle.setAttribute("aria-expanded", expanded.toString());
+  toggle.textContent = expanded ? "Collapse" : "Expand";
 }
 
 async function refreshAll() {
@@ -236,7 +242,7 @@ function renderMaterials() {
           <td>${escapeHtml(material.name)}</td>
           <td>${escapeHtml(material.filament_type)}</td>
           <td>${escapeHtml(material.color)}</td>
-          <td>$${material.price_per_gram.toFixed(4)}</td>
+          <td>$${material.price_per_gram.toFixed(2)}</td>
           <td>${material.spool_weight_grams}</td>
           <td>${escapeHtml(material.supplier || "")}</td>
           <td>${escapeHtml(material.brand || "")}</td>
@@ -264,7 +270,7 @@ function renderInventory() {
           <td>${Number(item.quantity_grams).toFixed(2)}</td>
           <td>${Number(item.reorder_level).toFixed(2)}</td>
           <td>${escapeHtml(item.spool_serial || "")}</td>
-          <td>${item.unit_cost_override ? `$${Number(item.unit_cost_override).toFixed(4)}` : "-"}</td>
+          <td>${item.unit_cost_override ? `$${Number(item.unit_cost_override).toFixed(2)}` : "-"}</td>
           <td>
             <button class="small-button" data-action="edit" data-id="${item.id}">Edit</button>
             <button class="small-button danger" data-action="delete" data-id="${item.id}">Delete</button>
@@ -325,14 +331,12 @@ function populateMaterialOptions() {
   const options = state.materials
     .map((material) => `<option value="${material.id}">${escapeHtml(material.name)} (${escapeHtml(material.color)})</option>`)
     .join("");
-  ["inventory-material", "pricing-material"].forEach((elementId) => {
-    const select = document.getElementById(elementId);
-    const currentValue = select.value;
-    select.innerHTML = `<option value="">Select material...</option>${options}`;
-    if (options && currentValue && state.materials.some((m) => String(m.id) === currentValue)) {
-      select.value = currentValue;
-    }
-  });
+  const select = document.getElementById("inventory-material");
+  const currentValue = select.value;
+  select.innerHTML = `<option value="">Select material...</option>${options}`;
+  if (options && currentValue && state.materials.some((m) => String(m.id) === currentValue)) {
+    select.value = currentValue;
+  }
 }
 
 function populateInventoryOptions() {
@@ -454,27 +458,6 @@ async function handleMovementSubmit(event) {
   } catch (error) {
     console.error(error);
     setMessage(error.message, "error");
-  }
-}
-
-async function handlePricingSubmit(event) {
-  event.preventDefault();
-  try {
-    const payload = buildPricingPayload();
-    const response = await api("/pricing/quote", { method: "POST", body: payload });
-    const breakdown = response.pricing;
-    pricingResult.innerHTML = `
-      <h3>${escapeHtml(response.material_snapshot.name)} (${escapeHtml(response.material_snapshot.color)})</h3>
-      <p>Material cost: $${breakdown.material_cost.toFixed(2)}</p>
-      <p>Machine time: $${breakdown.machine_cost.toFixed(2)}</p>
-      <p>Labor: $${breakdown.labor_cost.toFixed(2)}</p>
-      <p>Subtotal: $${breakdown.subtotal.toFixed(2)}</p>
-      <p>Margin: $${breakdown.margin_amount.toFixed(2)}</p>
-      <p class="total">Total price: $${breakdown.total_price.toFixed(2)}</p>
-    `;
-  } catch (error) {
-    console.error(error);
-    pricingResult.innerHTML = `<p class="muted">Failed to calculate quote: ${escapeHtml(error.message)}</p>`;
   }
 }
 
@@ -711,36 +694,6 @@ function buildHardwarePayload() {
     reorder_level: reorder,
     bin_location: optionalString(hardwareFields.bin_location.value),
     notes: optionalString(hardwareFields.notes.value),
-  };
-}
-
-function buildPricingPayload() {
-  const materialValue = pricingFields.material_id.value;
-  if (!materialValue) {
-    throw new Error("Select a material before calculating a quote.");
-  }
-  const materialId = Number(materialValue);
-  if (!Number.isFinite(materialId)) {
-    throw new Error("Select a material before calculating a quote.");
-  }
-  const weight = Number(pricingFields.weight_grams.value);
-  const hours = Number(pricingFields.print_time_hours.value);
-  const machineRate = Number(pricingFields.machine_hour_rate.value);
-  if (!Number.isFinite(weight) || weight <= 0 || !Number.isFinite(hours) || hours <= 0 || !Number.isFinite(machineRate) || machineRate <= 0) {
-    throw new Error("Weight, print time, and machine rate must be positive numbers.");
-  }
-  const labor = Number(pricingFields.labor_cost.value || 0);
-  const margin = Number(pricingFields.margin_pct.value || 0);
-  if (!Number.isFinite(labor) || labor < 0 || !Number.isFinite(margin) || margin < 0) {
-    throw new Error("Labor and margin must be non-negative numbers.");
-  }
-  return {
-    material_id: materialId,
-    weight_grams: weight,
-    print_time_hours: hours,
-    machine_hour_rate: machineRate,
-    labor_cost: labor,
-    margin_pct: margin,
   };
 }
 
