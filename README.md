@@ -8,6 +8,7 @@ StockWorks is a browser-based inventory tool for 3D-printing studios. It combine
 - **Hardware coverage** for magnets, heat-set inserts, screws, and any other non-filament consumables, including movement history.
 - **Full REST API** for integrations, automation, or bulk operations. Swagger docs live at `/docs`.
 - **Optional desktop GUI** (`python -m app.gui`) built with Tkinter for teams that want a native-feeling app.
+- **Installable PWA** - the UI now ships with a web manifest plus platform icons so Android and iOS users can “Add to Home Screen” for a full-screen launcher experience.
 
 ## Run the web application
 1. Create/activate a virtual environment and install dependencies:
@@ -58,13 +59,21 @@ python -m app.gui
 It reads and writes the same SQLite database as the web version, so you can mix and match.
 
 ## Deploy on Unraid
-StockWorks now follows the Unraid-friendly conventions (`/data`, `PUID`/`PGID`, `TZ`) and ships with a community-app style template in `deploy/unraid/stockworks.xml`.
+StockWorks follows the standard Unraid conventions (`/data`, `PUID`/`PGID`, `TZ`) and includes a ready-to-import Docker template under `deploy/unraid/stockworks.xml` (complete with icon/metadata).
 
-1. Clone this repository on your workstation (or onto the Unraid server) and build/push the image you want the array to pull. A local build looks like `docker build -t stockworks ./stockworks`. Push it to your registry if you prefer to pull from another machine.
-2. Copy `deploy/unraid/stockworks.xml` into `/boot/config/plugins/dockerMan/templates-user/` on Unraid (or import it via the Docker tab). Update the `<Repository>` field in the template if you pushed the image under a different tag.
-3. In the Unraid UI go to the **Docker** tab, click **Add Container**, and pick the StockWorks template.
-4. Point the `/data` container path at the share you want to persist the SQLite database (for example `/mnt/user/appdata/stockworks`). Adjust `PUID`, `PGID`, and `TZ` if necessary.
-5. Apply the template. The web UI will be available at `http://SERVER_IP:8000/` and the OpenAPI docs at `http://SERVER_IP:8000/docs`.
+1. Clone this repository or download the latest release archive. Build and push the container image you want Unraid to consume (for example `docker build -t ghcr.io/your-user/stockworks:latest . && docker push ghcr.io/your-user/stockworks:latest`).
+2. Copy `deploy/unraid/stockworks.xml` to `/boot/config/plugins/dockerMan/templates-user/` on your server **or** paste the raw template URL (`https://raw.githubusercontent.com/steph/stockworks/main/deploy/unraid/stockworks.xml`) into the Docker tab’s “Template repositories” field.
+3. Edit the template (Docker tab ➜ **Add Container** ➜ StockWorks) and update the `<Repository>` value so it matches the image you built/pushed. Leave the default ports/environment variables unless you need overrides.
+4. Map `/data` to a persistent Unraid share such as `/mnt/user/appdata/stockworks` and set `PUID`/`PGID` to the account that owns that share (typically `99`/`100` on stock systems). Adjust `TZ` to your locale.
+5. Click **Apply**. The UI will be reachable at `http://SERVER_IP:8000/` and the OpenAPI docs at `http://SERVER_IP:8000/docs`. Because the container runs as your chosen UID/GID, file permissions remain Unraid-friendly.
+
+## Add the web app to a mobile home screen
+The `/static/site.webmanifest` plus platform icons enable full-screen launches on mobile:
+
+- **Android/Chrome** – open `http://SERVER_IP:8000/`, tap the browser menu, and choose **Add to Home screen**. StockWorks installs as a standalone PWA with the magenta theme color.
+- **iOS/Safari** – open the same URL, tap the share icon, pick **Add to Home Screen**, and confirm. iOS will use the bundled 180×180 touch icon and launches StockWorks without browser chrome.
+
+The manifest also advertises theme/background colors, so the splash screen matches the MakerWorks v2 palette on both platforms.
 
 ## API & configuration
 - Base URL: `http://localhost:8000`

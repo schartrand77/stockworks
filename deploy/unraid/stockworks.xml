@@ -11,8 +11,8 @@
   <Overview>StockWorks is a FastAPI-powered inventory and quoting tool for 3D-printing studios.</Overview>
   <Category>Productivity:Tools;Inventory:Management</Category>
   <WebUI>http://[IP]:[PORT:8000]/</WebUI>
-  <TemplateURL></TemplateURL>
-  <Icon></Icon>
+  <TemplateURL>https://raw.githubusercontent.com/steph/stockworks/main/deploy/unraid/stockworks.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/steph/stockworks/main/app/static/icon-192.png</Icon>
   <ExtraParams>--restart unless-stopped</ExtraParams>
   <PostArgs></PostArgs>
   <CPUset></CPUset>
