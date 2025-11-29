@@ -11,6 +11,8 @@ const state = {
 
 const messageEl = document.getElementById("message");
 const refreshAllBtn = document.getElementById("refresh-all");
+const tabButtons = Array.from(document.querySelectorAll(".tab-button"));
+const tabPanels = Array.from(document.querySelectorAll(".tab-panel"));
 
 // Material references
 const materialForm = document.getElementById("material-form");
@@ -84,7 +86,7 @@ const hardwareMovementNote = document.getElementById("hardware-movement-note");
 const hardwareMovementTableBody = document.querySelector("#hardware-movement-table tbody");
 
 document.addEventListener("DOMContentLoaded", () => {
-  initCollapsibleCards();
+  initTabs();
   bindEvents();
   refreshAll();
 });
@@ -145,24 +147,6 @@ function bindEvents() {
     }
   });
   hardwareMovementForm.addEventListener("submit", handleHardwareMovementSubmit);
-}
-
-function initCollapsibleCards() {
-  document.querySelectorAll(".card").forEach((card) => {
-    const toggle = card.querySelector(".card-toggle");
-    if (!toggle) return;
-    updateCardToggleState(card, toggle);
-    toggle.addEventListener("click", () => {
-      card.classList.toggle("collapsed");
-      updateCardToggleState(card, toggle);
-    });
-  });
-}
-
-function updateCardToggleState(card, toggle) {
-  const expanded = !card.classList.contains("collapsed");
-  toggle.setAttribute("aria-expanded", expanded.toString());
-  toggle.textContent = expanded ? "Collapse" : "Expand";
 }
 
 async function refreshAll() {
@@ -845,4 +829,39 @@ function escapeHtml(value) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+function initTabs() {
+  if (!tabButtons.length || !tabPanels.length) {
+    return;
+  }
+  const activeButton = document.querySelector(".tab-button.active") || tabButtons[0];
+  const targetId =
+    (activeButton && activeButton.dataset && activeButton.dataset.tabTarget) || (tabPanels[0] && tabPanels[0].id);
+  if (targetId) {
+    setActiveTab(targetId);
+  }
+  tabButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      if (button.dataset.tabTarget) {
+        setActiveTab(button.dataset.tabTarget);
+      }
+    });
+  });
+}
+
+function setActiveTab(targetId) {
+  if (!targetId) return;
+  const targetPanel = document.getElementById(targetId);
+  if (!targetPanel) return;
+  tabButtons.forEach((button) => {
+    const isActive = button.dataset.tabTarget === targetId;
+    button.classList.toggle("active", isActive);
+    button.setAttribute("aria-selected", isActive ? "true" : "false");
+  });
+  tabPanels.forEach((panel) => {
+    const isActive = panel.id === targetId;
+    panel.classList.toggle("active", isActive);
+    panel.hidden = !isActive;
+  });
 }

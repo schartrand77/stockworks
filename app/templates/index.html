@@ -29,18 +29,63 @@
     <main class="app-grid">
       <div id="message" class="message" role="status" aria-live="polite"></div>
 
-      <section class="card collapsed" id="materials-section">
+      <nav class="tab-nav" role="tablist" aria-label="Inventory sections">
+        <button
+          class="tab-button active"
+          id="tab-materials"
+          type="button"
+          role="tab"
+          aria-selected="true"
+          aria-controls="materials-panel"
+          data-tab-target="materials-panel"
+        >
+          Materials
+        </button>
+        <button
+          class="tab-button"
+          id="tab-inventory"
+          type="button"
+          role="tab"
+          aria-selected="false"
+          aria-controls="inventory-panel"
+          data-tab-target="inventory-panel"
+        >
+          Inventory
+        </button>
+        <button
+          class="tab-button"
+          id="tab-hardware"
+          type="button"
+          role="tab"
+          aria-selected="false"
+          aria-controls="hardware-panel"
+          data-tab-target="hardware-panel"
+        >
+          Hardware
+        </button>
+        <button
+          class="tab-button"
+          id="tab-movements"
+          type="button"
+          role="tab"
+          aria-selected="false"
+          aria-controls="movement-panel"
+          data-tab-target="movement-panel"
+        >
+          Stock Movements
+        </button>
+      </nav>
+
+      <div class="tab-panels">
+        <section class="card tab-panel active" id="materials-panel" role="tabpanel" aria-labelledby="tab-materials">
         <div class="card-header">
           <div>
             <h2>Materials</h2>
             <p>Define filament attributes and default pricing.</p>
           </div>
-          <div class="card-header-controls">
-            <div class="card-actions">
-              <button id="material-clear" type="button">Clear form</button>
-              <button id="material-refresh" type="button">Refresh list</button>
-            </div>
-            <button class="card-toggle" type="button" aria-expanded="false" aria-controls="materials-body">Expand</button>
+          <div class="card-actions">
+            <button id="material-clear" type="button">Clear form</button>
+            <button id="material-refresh" type="button">Refresh list</button>
           </div>
         </div>
         <div class="card-body two-columns" id="materials-body">
@@ -74,7 +119,7 @@
               Spool weight (grams)
               <input type="number" min="1" id="material-spool" required />
             </label>
-            <label>
+            <label class="full-width">
               Notes
               <textarea id="material-notes" rows="3" placeholder="Special handling, storage tips..."></textarea>
             </label>
@@ -102,20 +147,17 @@
             </table>
           </div>
         </div>
-      </section>
+        </section>
 
-      <section class="card collapsed" id="inventory-section">
+        <section class="card tab-panel" id="inventory-panel" role="tabpanel" aria-labelledby="tab-inventory" hidden>
         <div class="card-header">
           <div>
             <h2>Inventory</h2>
             <p>Track spool locations, quantities, and reorder points.</p>
           </div>
-          <div class="card-header-controls">
-            <div class="card-actions">
-              <button id="inventory-clear" type="button">Clear form</button>
-              <button id="inventory-refresh" type="button">Refresh list</button>
-            </div>
-            <button class="card-toggle" type="button" aria-expanded="false" aria-controls="inventory-body">Expand</button>
+          <div class="card-actions">
+            <button id="inventory-clear" type="button">Clear form</button>
+            <button id="inventory-refresh" type="button">Refresh list</button>
           </div>
         </div>
         <div class="card-body two-columns" id="inventory-body">
@@ -169,20 +211,17 @@
             </table>
           </div>
         </div>
-      </section>
+        </section>
 
-      <section class="card collapsed" id="hardware-section">
+        <section class="card tab-panel" id="hardware-panel" role="tabpanel" aria-labelledby="tab-hardware" hidden>
         <div class="card-header">
           <div>
             <h2>Hardware Components</h2>
             <p>Track magnets, inserts, screws, and other non-filament supplies.</p>
           </div>
-          <div class="card-header-controls">
-            <div class="card-actions">
-              <button id="hardware-clear" type="button">Clear form</button>
-              <button id="hardware-refresh" type="button">Refresh list</button>
-            </div>
-            <button class="card-toggle" type="button" aria-expanded="false" aria-controls="hardware-body">Expand</button>
+          <div class="card-actions">
+            <button id="hardware-clear" type="button">Clear form</button>
+            <button id="hardware-refresh" type="button">Refresh list</button>
           </div>
         </div>
         <div class="card-body" id="hardware-body">
@@ -225,7 +264,7 @@
                 Bin / location
                 <input type="text" id="hardware-bin" placeholder="Rack B - Bin 4" />
               </label>
-              <label>
+              <label class="full-width">
                 Notes
                 <textarea id="hardware-notes" rows="3" placeholder="Packaging info, supplier link..."></textarea>
               </label>
@@ -302,16 +341,13 @@
             </div>
           </div>
         </div>
-      </section>
+        </section>
 
-      <section class="card collapsed" id="movement-section">
+        <section class="card tab-panel" id="movement-panel" role="tabpanel" aria-labelledby="tab-movements" hidden>
         <div class="card-header">
           <div>
             <h2>Stock Movements</h2>
             <p>Log usage, receipts, or adjustments, and view history.</p>
-          </div>
-          <div class="card-header-controls">
-            <button class="card-toggle" type="button" aria-expanded="false" aria-controls="movement-body">Expand</button>
           </div>
         </div>
         <div class="card-body two-columns" id="movement-body">
@@ -363,8 +399,8 @@
             </table>
           </div>
         </div>
-      </section>
-
+        </section>
+      </div>
     </main>
 
     <script type="module" src="/static/app.js"></script>
