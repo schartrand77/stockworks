@@ -4,10 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="application-name" content="StockWorks" />
-    <meta name="theme-color" content="#ff4c92" />
+    <meta name="theme-color" content="#f4f6fb" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="StockWorks" />
+    <meta name="apple-touch-fullscreen" content="yes" />
     <title>StockWorks Inventory</title>
     <link rel="stylesheet" href="/static/styles.css" />
     <link rel="manifest" href="/static/site.webmanifest" />
@@ -23,6 +25,9 @@
       </div>
       <div class="header-actions">
         <button id="refresh-all" type="button">Refresh all data</button>
+        <form method="post" action="/logout">
+          <button type="submit">Sign out</button>
+        </form>
       </div>
     </header>
 
@@ -74,6 +79,17 @@
         >
           Stock Movements
         </button>
+        <button
+          class="tab-button"
+          id="tab-orderworks"
+          type="button"
+          role="tab"
+          aria-selected="false"
+          aria-controls="orderworks-panel"
+          data-tab-target="orderworks-panel"
+        >
+          Orders
+        </button>
       </nav>
 
       <div class="tab-panels">
@@ -93,23 +109,27 @@
             <input type="hidden" id="material-id" />
             <label>
               Name
-              <input type="text" id="material-name" required placeholder="PLA - Black" />
+              <input type="text" id="material-name" required placeholder="StockWorks PLA - Midnight Black" />
+            </label>
+            <label>
+              Brand
+              <input type="text" id="material-brand" placeholder="Polymaker, Prusament..." />
             </label>
             <label>
               Filament type
               <input type="text" id="material-type" required placeholder="PLA, PETG, ABS..." />
             </label>
             <label>
+              Category / finish
+              <input type="text" id="material-category" placeholder="Basic, matte, silk, CF..." />
+            </label>
+            <label>
               Color
-              <input type="text" id="material-color" required placeholder="Black" />
+              <input type="text" id="material-color" required placeholder="Midnight Black" />
             </label>
             <label>
               Supplier
               <input type="text" id="material-supplier" placeholder="Optional" />
-            </label>
-            <label>
-              Brand
-              <input type="text" id="material-brand" placeholder="Optional" />
             </label>
             <label>
               Price per gram (USD)
@@ -118,6 +138,10 @@
             <label>
               Spool weight (grams)
               <input type="number" min="1" id="material-spool" required />
+            </label>
+            <label>
+              Barcode / SKU
+              <input type="text" id="material-barcode" placeholder="UPC, EAN, SKU..." />
             </label>
             <label class="full-width">
               Notes
@@ -134,12 +158,14 @@
               <thead>
                 <tr>
                   <th>Name</th>
+                  <th>Brand</th>
                   <th>Type</th>
+                  <th>Category</th>
                   <th>Color</th>
                   <th>Price/g</th>
                   <th>Spool (g)</th>
                   <th>Supplier</th>
-                  <th>Brand</th>
+                  <th>Barcode</th>
                   <th></th>
                 </tr>
               </thead>
@@ -396,6 +422,37 @@
                   <td colspan="5" class="muted">Select an inventory item to view history.</td>
                 </tr>
               </tbody>
+            </table>
+          </div>
+        </div>
+        </section>
+
+        <section class="card tab-panel" id="orderworks-panel" role="tabpanel" aria-labelledby="tab-orderworks" hidden>
+        <div class="card-header">
+          <div>
+            <h2>OrderWorks Jobs</h2>
+            <p>Review the MakerWorks queue without leaving StockWorks.</p>
+          </div>
+          <div class="card-actions">
+            <button id="orderworks-refresh" type="button">Refresh jobs</button>
+          </div>
+        </div>
+        <div class="card-body" id="orderworks-body">
+          <p id="orderworks-status" class="integration-status muted"></p>
+          <div class="table-wrapper">
+            <table id="orderworks-table">
+              <thead>
+                <tr>
+                  <th>Job ID</th>
+                  <th>Status</th>
+                  <th>Fulfillment</th>
+                  <th>Total</th>
+                  <th>Created</th>
+                  <th>Items</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody></tbody>
             </table>
           </div>
         </div>

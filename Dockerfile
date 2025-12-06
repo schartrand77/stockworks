@@ -8,7 +8,7 @@ WORKDIR $APP_HOME
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends gosu tzdata \
+    && apt-get install -y --no-install-recommends bash gosu tzdata ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 ENV DEBIAN_FRONTEND=dialog
 
@@ -21,6 +21,7 @@ RUN chmod +x /entrypoint.sh
 
 ENV PUID=1000 \
     PGID=1000 \
+    UMASK=002 \
     TZ=UTC \
     STOCKWORKS_DATA_DIR=/data \
     STOCKWORKS_DB_FILENAME=app.db

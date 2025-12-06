@@ -4,12 +4,23 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "8000:8000"
+      - "${APP_PORT:-8000}:8000"
     volumes:
       - ./data:/data
+    env_file:
+      - .env
     environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=UTC
-      - STOCKWORKS_DATA_DIR=/data
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      UMASK: ${UMASK:-002}
+      TZ: ${TZ:-UTC}
+      STOCKWORKS_DATA_DIR: ${STOCKWORKS_DATA_DIR:-/data}
+      STOCKWORKS_DB_FILENAME: ${STOCKWORKS_DB_FILENAME:-app.db}
+      DATABASE_URL: ${DATABASE_URL:-}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme}
+      SECRET_KEY: ${SECRET_KEY:-please-change-me}
+      ORDERWORKS_BASE_URL: ${ORDERWORKS_BASE_URL:-http://localhost:3000}
+      ORDERWORKS_ADMIN_USERNAME: ${ORDERWORKS_ADMIN_USERNAME:-admin@example.com}
+      ORDERWORKS_ADMIN_PASSWORD: ${ORDERWORKS_ADMIN_PASSWORD:-change-me}
     restart: unless-stopped

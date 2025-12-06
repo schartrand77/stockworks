@@ -1,18 +1,27 @@
 """FastAPI application implementing inventory control for a 3D printing service."""
 from __future__ import annotations
 
+import os
+import secrets
 from datetime import datetime
 from pathlib import Path
 from typing import List
 
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import Depends, FastAPI, Form, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select
+from starlette.middleware.sessions import SessionMiddleware
 
 from .db import get_session, init_db
+from .orderworks import (
+    OrderWorksAuthenticationError,
+    OrderWorksIntegrationError,
+    OrderWorksNotConfiguredError,
+    get_orderworks_client,
+)
 from .models import (
     HardwareItem,
     HardwareItemCreate,
@@ -40,6 +49,14 @@ from .models import (
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
+ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme")
+SECRET_KEY = os.environ.get("SECRET_KEY", "please-change-me")
+SESSION_COOKIE = "stockworks-session"
+
+if not SECRET_KEY:
+    raise RuntimeError("SECRET_KEY must be configured via SECRET_KEY environment variable.")
+
 app = FastAPI(title="StockWorks", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
@@ -47,6 +64,12 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=SECRET_KEY,
+    session_cookie=SESSION_COOKIE,
+    same_site="lax",
 )
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 
@@ -56,15 +79,58 @@ def on_startup() -> None:
     init_db()
 
 
+def _is_authenticated(request: Request) -> bool:
+    return bool(request.session.get("authenticated"))
+
+
+def require_auth(request: Request) -> bool:
+    if not _is_authenticated(request):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+    return True
+
+
+def _credentials_valid(username: str, password: str) -> bool:
+    return secrets.compare_digest(username.strip(), ADMIN_USERNAME) and secrets.compare_digest(password, ADMIN_PASSWORD)
+
+
 @app.get("/", response_class=HTMLResponse)
 def root(request: Request):
     """Serve the HTML shell for the single-page UI."""
+    if not _is_authenticated(request):
+        return RedirectResponse("/login", status_code=status.HTTP_302_FOUND)
     return templates.TemplateResponse("index.html", {"request": request})
+
+
+@app.get("/login", response_class=HTMLResponse)
+def login_page(request: Request):
+    if _is_authenticated(request):
+        return RedirectResponse("/", status_code=status.HTTP_303_SEE_OTHER)
+    return templates.TemplateResponse("login.html", {"request": request, "error": None, "username": ""})
+
+
+@app.post("/login")
+async def login(request: Request, username: str = Form(...), password: str = Form(...)):
+    if _credentials_valid(username, password):
+        request.session["authenticated"] = True
+        request.session["username"] = ADMIN_USERNAME
+        return RedirectResponse("/", status_code=status.HTTP_303_SEE_OTHER)
+    context = {"request": request, "error": "Invalid username or password.", "username": username}
+    return templates.TemplateResponse("login.html", context, status_code=status.HTTP_401_UNAUTHORIZED)
+
+
+@app.post("/logout")
+def logout(request: Request):
+    request.session.clear()
+    return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
 
 
 # Material endpoints
 @app.post("/materials", response_model=MaterialRead, status_code=status.HTTP_201_CREATED)
-def create_material(payload: MaterialCreate, session: Session = Depends(get_session)):
+def create_material(
+    payload: MaterialCreate,
+    session: Session = Depends(get_session),
+    _: bool = Depends(require_auth),
+):
     material = Material.from_orm(payload)
     session.add(material)
     session.commit()
@@ -73,13 +139,13 @@ def create_material(payload: MaterialCreate, session: Session = Depends(get_sess
 
 
 @app.get("/materials", response_model=List[MaterialRead])
-def list_materials(session: Session = Depends(get_session)):
+def list_materials(session: Session = Depends(get_session), _: bool = Depends(require_auth)):
     materials = session.exec(select(Material).order_by(Material.name)).all()
     return materials
 
 
 @app.get("/materials/{material_id}", response_model=MaterialRead)
-def get_material(material_id: int, session: Session = Depends(get_session)):
+def get_material(material_id: int, session: Session = Depends(get_session), _: bool = Depends(require_auth)):
     material = session.get(Material, material_id)
     if not material:
         raise HTTPException(status_code=404, detail="Material not found")
@@ -87,7 +153,12 @@ def get_material(material_id: int, session: Session = Depends(get_session)):
 
 
 @app.put("/materials/{material_id}", response_model=MaterialRead)
-def update_material(material_id: int, payload: MaterialUpdate, session: Session = Depends(get_session)):
+def update_material(
+    material_id: int,
+    payload: MaterialUpdate,
+    session: Session = Depends(get_session),
+    _: bool = Depends(require_auth),
+):
     material = session.get(Material, material_id)
     if not material:
         raise HTTPException(status_code=404, detail="Material not found")
@@ -101,7 +172,7 @@ def update_material(material_id: int, payload: MaterialUpdate, session: Session 
 
 
 @app.delete("/materials/{material_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_material(material_id: int, session: Session = Depends(get_session)):
+def delete_material(material_id: int, session: Session = Depends(get_session), _: bool = Depends(require_auth)):
     material = session.get(Material, material_id)
     if not material:
         raise HTTPException(status_code=404, detail="Material not found")
@@ -112,7 +183,11 @@ def delete_material(material_id: int, session: Session = Depends(get_session)):
 
 # Inventory endpoints
 @app.post("/inventory", response_model=InventoryItemRead, status_code=status.HTTP_201_CREATED)
-def create_inventory_item(payload: InventoryItemCreate, session: Session = Depends(get_session)):
+def create_inventory_item(
+    payload: InventoryItemCreate,
+    session: Session = Depends(get_session),
+    _: bool = Depends(require_auth),
+):
     _ensure_material_exists(session, payload.material_id)
     inventory_item = InventoryItem.from_orm(payload)
     session.add(inventory_item)
@@ -122,13 +197,13 @@ def create_inventory_item(payload: InventoryItemCreate, session: Session = Depen
 
 
 @app.get("/inventory", response_model=List[InventoryItemRead])
-def list_inventory_items(session: Session = Depends(get_session)):
+def list_inventory_items(session: Session = Depends(get_session), _: bool = Depends(require_auth)):
     items = session.exec(select(InventoryItem)).all()
     return items
 
 
 @app.get("/inventory/{item_id}", response_model=InventoryItemRead)
-def get_inventory_item(item_id: int, session: Session = Depends(get_session)):
+def get_inventory_item(item_id: int, session: Session = Depends(get_session), _: bool = Depends(require_auth)):
     item = session.get(InventoryItem, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Inventory item not found")
@@ -136,7 +211,12 @@ def get_inventory_item(item_id: int, session: Session = Depends(get_session)):
 
 
 @app.put("/inventory/{item_id}", response_model=InventoryItemRead)
-def update_inventory_item(item_id: int, payload: InventoryItemUpdate, session: Session = Depends(get_session)):
+def update_inventory_item(
+    item_id: int,
+    payload: InventoryItemUpdate,
+    session: Session = Depends(get_session),
+    _: bool = Depends(require_auth),
+):
     item = session.get(InventoryItem, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Inventory item not found")
@@ -152,7 +232,7 @@ def update_inventory_item(item_id: int, payload: InventoryItemUpdate, session: S
 
 
 @app.delete("/inventory/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_inventory_item(item_id: int, session: Session = Depends(get_session)):
+def delete_inventory_item(item_id: int, session: Session = Depends(get_session), _: bool = Depends(require_auth)):
     item = session.get(InventoryItem, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Inventory item not found")
@@ -163,7 +243,11 @@ def delete_inventory_item(item_id: int, session: Session = Depends(get_session))
 
 # Stock movement endpoints
 @app.post("/movements", response_model=StockMovementRead, status_code=status.HTTP_201_CREATED)
-def create_stock_movement(payload: StockMovementCreate, session: Session = Depends(get_session)):
+def create_stock_movement(
+    payload: StockMovementCreate,
+    session: Session = Depends(get_session),
+    _: bool = Depends(require_auth),
+):
     item = session.get(InventoryItem, payload.inventory_item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Inventory item not found")
@@ -182,7 +266,7 @@ def create_stock_movement(payload: StockMovementCreate, session: Session = Depen
 
 
 @app.get("/inventory/{item_id}/movements", response_model=List[StockMovementRead])
-def list_movements(item_id: int, session: Session = Depends(get_session)):
+def list_movements(item_id: int, session: Session = Depends(get_session), _: bool = Depends(require_auth)):
     _ensure_inventory_exists(session, item_id)
     statement = select(StockMovement).where(StockMovement.inventory_item_id == item_id).order_by(
         StockMovement.created_at.desc()
@@ -193,7 +277,11 @@ def list_movements(item_id: int, session: Session = Depends(get_session)):
 
 # Hardware endpoints
 @app.post("/hardware", response_model=HardwareItemRead, status_code=status.HTTP_201_CREATED)
-def create_hardware_item(payload: HardwareItemCreate, session: Session = Depends(get_session)):
+def create_hardware_item(
+    payload: HardwareItemCreate,
+    session: Session = Depends(get_session),
+    _: bool = Depends(require_auth),
+):
     item = HardwareItem.from_orm(payload)
     session.add(item)
     session.commit()
@@ -202,13 +290,13 @@ def create_hardware_item(payload: HardwareItemCreate, session: Session = Depends
 
 
 @app.get("/hardware", response_model=List[HardwareItemRead])
-def list_hardware_items(session: Session = Depends(get_session)):
+def list_hardware_items(session: Session = Depends(get_session), _: bool = Depends(require_auth)):
     statement = select(HardwareItem).order_by(HardwareItem.name)
     return session.exec(statement).all()
 
 
 @app.get("/hardware/{hardware_id}", response_model=HardwareItemRead)
-def get_hardware_item(hardware_id: int, session: Session = Depends(get_session)):
+def get_hardware_item(hardware_id: int, session: Session = Depends(get_session), _: bool = Depends(require_auth)):
     item = session.get(HardwareItem, hardware_id)
     if not item:
         raise HTTPException(status_code=404, detail="Hardware item not found")
@@ -216,7 +304,12 @@ def get_hardware_item(hardware_id: int, session: Session = Depends(get_session))
 
 
 @app.put("/hardware/{hardware_id}", response_model=HardwareItemRead)
-def update_hardware_item(hardware_id: int, payload: HardwareItemUpdate, session: Session = Depends(get_session)):
+def update_hardware_item(
+    hardware_id: int,
+    payload: HardwareItemUpdate,
+    session: Session = Depends(get_session),
+    _: bool = Depends(require_auth),
+):
     item = session.get(HardwareItem, hardware_id)
     if not item:
         raise HTTPException(status_code=404, detail="Hardware item not found")
@@ -230,7 +323,7 @@ def update_hardware_item(hardware_id: int, payload: HardwareItemUpdate, session:
 
 
 @app.delete("/hardware/{hardware_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_hardware_item(hardware_id: int, session: Session = Depends(get_session)):
+def delete_hardware_item(hardware_id: int, session: Session = Depends(get_session), _: bool = Depends(require_auth)):
     item = session.get(HardwareItem, hardware_id)
     if not item:
         raise HTTPException(status_code=404, detail="Hardware item not found")
@@ -240,7 +333,11 @@ def delete_hardware_item(hardware_id: int, session: Session = Depends(get_sessio
 
 
 @app.post("/hardware/movements", response_model=HardwareMovementRead, status_code=status.HTTP_201_CREATED)
-def create_hardware_movement(payload: HardwareMovementCreate, session: Session = Depends(get_session)):
+def create_hardware_movement(
+    payload: HardwareMovementCreate,
+    session: Session = Depends(get_session),
+    _: bool = Depends(require_auth),
+):
     item = session.get(HardwareItem, payload.hardware_item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Hardware item not found")
@@ -257,7 +354,7 @@ def create_hardware_movement(payload: HardwareMovementCreate, session: Session =
 
 
 @app.get("/hardware/{hardware_id}/movements", response_model=List[HardwareMovementRead])
-def list_hardware_movements(hardware_id: int, session: Session = Depends(get_session)):
+def list_hardware_movements(hardware_id: int, session: Session = Depends(get_session), _: bool = Depends(require_auth)):
     _ensure_hardware_exists(session, hardware_id)
     statement = select(HardwareMovement).where(HardwareMovement.hardware_item_id == hardware_id).order_by(
         HardwareMovement.created_at.desc()
@@ -267,7 +364,11 @@ def list_hardware_movements(hardware_id: int, session: Session = Depends(get_ses
 
 # Pricing endpoint
 @app.post("/pricing/quote", response_model=PricingResponse)
-def calculate_quote(payload: PricingRequest, session: Session = Depends(get_session)):
+def calculate_quote(
+    payload: PricingRequest,
+    session: Session = Depends(get_session),
+    _: bool = Depends(require_auth),
+):
     material = session.get(Material, payload.material_id)
     if not material:
         raise HTTPException(status_code=404, detail="Material not found for quote")
@@ -288,6 +389,20 @@ def calculate_quote(payload: PricingRequest, session: Session = Depends(get_sess
     )
 
     return PricingResponse(pricing=breakdown, material_snapshot=MaterialRead.from_orm(material))
+
+
+@app.get("/orderworks/jobs")
+def fetch_orderworks_jobs(_: bool = Depends(require_auth)):
+    client = get_orderworks_client()
+    try:
+        jobs = client.list_jobs()
+    except OrderWorksNotConfiguredError:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="OrderWorks integration is not configured.")
+    except OrderWorksAuthenticationError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+    except OrderWorksIntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+    return {"jobs": jobs, "base_url": client.base_url}
 
 
 @app.get("/health", tags=["system"])

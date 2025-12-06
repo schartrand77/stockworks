@@ -7,12 +7,14 @@ from sqlmodel import Field, Relationship, SQLModel
 
 class MaterialBase(SQLModel):
     name: str
+    brand: Optional[str] = None
     filament_type: str
+    category: Optional[str] = Field(default=None, description="Finishes like basic, matte, silk, cf, etc.")
     color: str
     supplier: Optional[str] = None
-    brand: Optional[str] = None
     price_per_gram: float = Field(gt=0, description="Base material cost per gram")
     spool_weight_grams: int = Field(gt=0, description="Total grams per spool")
+    barcode: Optional[str] = Field(default=None, description="UPC/EAN/SKU barcode reference")
     notes: Optional[str] = None
 
 
@@ -27,12 +29,14 @@ class MaterialCreate(MaterialBase):
 
 class MaterialUpdate(SQLModel):
     name: Optional[str] = None
+    brand: Optional[str] = None
     filament_type: Optional[str] = None
+    category: Optional[str] = None
     color: Optional[str] = None
     supplier: Optional[str] = None
-    brand: Optional[str] = None
     price_per_gram: Optional[float] = Field(default=None, gt=0)
     spool_weight_grams: Optional[int] = Field(default=None, gt=0)
+    barcode: Optional[str] = None
     notes: Optional[str] = None
 
 

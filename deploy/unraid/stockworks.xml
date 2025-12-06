@@ -45,6 +45,14 @@
       <Mask>false</Mask>
     </Variable>
     <Variable>
+      <Name>UMASK</Name>
+      <Value>002</Value>
+      <Description>File creation mask applied before StockWorks starts.</Description>
+      <Display>advanced-hide</Display>
+      <Required>false</Required>
+      <Mask>false</Mask>
+    </Variable>
+    <Variable>
       <Name>TZ</Name>
       <Value>UTC</Value>
       <Description>Timezone used for the application logs.</Description>

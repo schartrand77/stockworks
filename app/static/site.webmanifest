@@ -1,12 +1,45 @@
-﻿{
+{
+  "id": "/",
   "name": "StockWorks Inventory",
   "short_name": "StockWorks",
-  "description": "Inventory, hardware, and movement tracking for MakerWorks v2.",
-  "start_url": "/",
+  "description": "Inventory, hardware, quoting, and stock tracking for modern maker studios.",
+  "lang": "en",
+  "dir": "ltr",
+  "start_url": "/?source=pwa",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#0c0412",
-  "theme_color": "#ff4c92",
+  "display_override": ["standalone"],
+  "orientation": "portrait-primary",
+  "background_color": "#f4f6fb",
+  "theme_color": "#0f1f39",
+  "categories": ["productivity", "business", "utilities"],
+  "prefer_related_applications": false,
+  "shortcuts": [
+    {
+      "name": "Materials",
+      "short_name": "Materials",
+      "description": "Jump to the filament material manager.",
+      "url": "/?tab=materials"
+    },
+    {
+      "name": "Inventory",
+      "short_name": "Inventory",
+      "description": "Open the spool/inventory tracking screen.",
+      "url": "/?tab=inventory"
+    },
+    {
+      "name": "Hardware",
+      "short_name": "Hardware",
+      "description": "View non-filament hardware bins.",
+      "url": "/?tab=hardware"
+    },
+    {
+      "name": "Stock movements",
+      "short_name": "Movements",
+      "description": "Log and review movement history.",
+      "url": "/?tab=movements"
+    }
+  ],
   "icons": [
     {
       "src": "/static/icon-192.png",

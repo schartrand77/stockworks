@@ -7,12 +7,17 @@ const state = {
   currentMovementItemId: null,
   currentHardwareId: null,
   currentHardwareMovementId: null,
+  orderworksJobs: [],
+  orderworksError: null,
+  orderworksConfigured: true,
+  orderworksBaseUrl: "",
 };
 
 const messageEl = document.getElementById("message");
 const refreshAllBtn = document.getElementById("refresh-all");
 const tabButtons = Array.from(document.querySelectorAll(".tab-button"));
 const tabPanels = Array.from(document.querySelectorAll(".tab-panel"));
+const TAB_QUERY_PARAM = "tab";
 
 // Material references
 const materialForm = document.getElementById("material-form");
@@ -20,11 +25,13 @@ const materialIdInput = document.getElementById("material-id");
 const materialFields = {
   name: document.getElementById("material-name"),
   filament_type: document.getElementById("material-type"),
+  category: document.getElementById("material-category"),
   color: document.getElementById("material-color"),
   supplier: document.getElementById("material-supplier"),
   brand: document.getElementById("material-brand"),
   price_per_gram: document.getElementById("material-price"),
   spool_weight_grams: document.getElementById("material-spool"),
+  barcode: document.getElementById("material-barcode"),
   notes: document.getElementById("material-notes"),
 };
 const materialTableBody = document.querySelector("#materials-table tbody");
@@ -85,6 +92,10 @@ const hardwareMovementReference = document.getElementById("hardware-movement-ref
 const hardwareMovementNote = document.getElementById("hardware-movement-note");
 const hardwareMovementTableBody = document.querySelector("#hardware-movement-table tbody");
 
+const orderworksTableBody = document.querySelector("#orderworks-table tbody");
+const orderworksRefreshBtn = document.getElementById("orderworks-refresh");
+const orderworksStatusEl = document.getElementById("orderworks-status");
+
 document.addEventListener("DOMContentLoaded", () => {
   initTabs();
   bindEvents();
@@ -96,6 +107,9 @@ function bindEvents() {
   materialRefreshBtn.addEventListener("click", () => safeAsync(loadMaterials));
   inventoryRefreshBtn.addEventListener("click", () => safeAsync(loadInventory));
   hardwareRefreshBtn.addEventListener("click", () => safeAsync(loadHardware));
+  if (orderworksRefreshBtn) {
+    orderworksRefreshBtn.addEventListener("click", () => safeAsync(loadOrderWorksJobs));
+  }
   materialClearBtn.addEventListener("click", resetMaterialForm);
   inventoryClearBtn.addEventListener("click", resetInventoryForm);
   hardwareClearBtn.addEventListener("click", resetHardwareForm);
@@ -151,7 +165,12 @@ function bindEvents() {
 
 async function refreshAll() {
   try {
-    await Promise.all([loadMaterials(), loadInventory(), loadHardware()]);
+    await Promise.all([
+      loadMaterials(),
+      loadInventory(),
+      loadHardware(),
+      loadOrderWorksJobs({ silent: true }).catch(() => null),
+    ]);
     setMessage("Data refreshed.", "success");
   } catch (error) {
     console.error(error);
@@ -209,6 +228,29 @@ async function loadHardware() {
   }
 }
 
+async function loadOrderWorksJobs({ silent = false } = {}) {
+  if (!orderworksTableBody) {
+    return;
+  }
+  try {
+    const payload = await api("/orderworks/jobs");
+    state.orderworksJobs = Array.isArray(payload.jobs) ? payload.jobs : [];
+    state.orderworksError = null;
+    state.orderworksConfigured = true;
+    state.orderworksBaseUrl = typeof payload.base_url === "string" ? payload.base_url : "";
+  } catch (error) {
+    console.error(error);
+    state.orderworksJobs = [];
+    state.orderworksBaseUrl = "";
+    state.orderworksError = error && error.message ? error.message : "Unable to sync OrderWorks jobs.";
+    state.orderworksConfigured = error && Number(error.status) === 503 ? false : true;
+    if (!silent) {
+      setMessage(state.orderworksError, "error");
+    }
+  }
+  renderOrderWorks();
+}
+
 async function loadMovements(itemId) {
   const results = await api(`/inventory/${itemId}/movements`);
   renderMovements(results);
@@ -216,7 +258,7 @@ async function loadMovements(itemId) {
 
 function renderMaterials() {
   if (!state.materials.length) {
-    materialTableBody.innerHTML = `<tr><td colspan="8" class="muted">No materials yet.</td></tr>`;
+    materialTableBody.innerHTML = `<tr><td colspan="10" class="muted">No materials yet.</td></tr>`;
     return;
   }
   materialTableBody.innerHTML = state.materials
@@ -224,12 +266,14 @@ function renderMaterials() {
       (material) => `
         <tr data-id="${material.id}">
           <td>${escapeHtml(material.name)}</td>
+          <td>${escapeHtml(material.brand || "")}</td>
           <td>${escapeHtml(material.filament_type)}</td>
+          <td>${escapeHtml(material.category || "")}</td>
           <td>${escapeHtml(material.color)}</td>
           <td>$${material.price_per_gram.toFixed(2)}</td>
           <td>${material.spool_weight_grams}</td>
           <td>${escapeHtml(material.supplier || "")}</td>
-          <td>${escapeHtml(material.brand || "")}</td>
+          <td>${escapeHtml(material.barcode || "")}</td>
           <td>
             <button class="small-button" data-action="edit" data-id="${material.id}">Edit</button>
             <button class="small-button danger" data-action="delete" data-id="${material.id}">Delete</button>
@@ -286,6 +330,71 @@ function renderHardware() {
           </td>
         </tr>`
     )
+    .join("");
+}
+
+function renderOrderWorks() {
+  if (!orderworksTableBody) {
+    return;
+  }
+  if (orderworksStatusEl) {
+    if (!state.orderworksConfigured) {
+      orderworksStatusEl.textContent =
+        "OrderWorks integration is not configured. Set ORDERWORKS_* variables to enable this view.";
+      orderworksStatusEl.classList.remove("error");
+      orderworksStatusEl.classList.add("muted");
+    } else if (state.orderworksError) {
+      orderworksStatusEl.textContent = state.orderworksError;
+      orderworksStatusEl.classList.add("error");
+      orderworksStatusEl.classList.remove("muted");
+    } else {
+      orderworksStatusEl.textContent = state.orderworksJobs.length
+        ? `Showing ${state.orderworksJobs.length} job${state.orderworksJobs.length === 1 ? "" : "s"} from OrderWorks.`
+        : "No jobs returned from OrderWorks.";
+      orderworksStatusEl.classList.remove("error");
+      orderworksStatusEl.classList.add("muted");
+    }
+  }
+  if (!state.orderworksConfigured) {
+    orderworksTableBody.innerHTML = `<tr><td colspan="7" class="muted">Configure OrderWorks credentials to sync jobs.</td></tr>`;
+    return;
+  }
+  if (state.orderworksError) {
+    orderworksTableBody.innerHTML = `<tr><td colspan="7" class="muted">${escapeHtml(state.orderworksError)}</td></tr>`;
+    return;
+  }
+  if (!state.orderworksJobs.length) {
+    orderworksTableBody.innerHTML = `<tr><td colspan="7" class="muted">No jobs available.</td></tr>`;
+    return;
+  }
+  const orderworksBase = state.orderworksBaseUrl ? state.orderworksBaseUrl.replace(/\/+$/, "") : "";
+  orderworksTableBody.innerHTML = state.orderworksJobs
+    .map((job) => {
+      const status = formatOrderStatus(job.status);
+      const fulfillment = formatOrderStatus(job.fulfillmentStatus);
+      const total = formatCurrencyValue(job.totalCents, job.currency);
+      const createdAt = job.makerworksCreatedAt || job.createdAt;
+      const createdLabel = formatTimestamp(createdAt);
+      const lineItemsSummary = summarizeLineItems(job.lineItems);
+      const jobLinkId = job.paymentIntentId || job.id;
+      const jobLink =
+        orderworksBase && jobLinkId ? `${orderworksBase}/jobs/${encodeURIComponent(jobLinkId)}` : null;
+      const safeJobLink = jobLink ? escapeHtml(jobLink) : "";
+      return `
+        <tr>
+          <td>${escapeHtml(job.id)}</td>
+          <td>${escapeHtml(status)}</td>
+          <td>${escapeHtml(fulfillment)}</td>
+          <td>${escapeHtml(total)}</td>
+          <td>${escapeHtml(createdLabel)}</td>
+          <td>${escapeHtml(lineItemsSummary)}</td>
+          <td>${
+            jobLink
+              ? `<a href="${safeJobLink}" target="_blank" rel="noreferrer noopener">Open</a>`
+              : ""
+          }</td>
+        </tr>`;
+    })
     .join("");
 }
 
@@ -485,11 +594,13 @@ function startMaterialEdit(id) {
   materialIdInput.value = id;
   materialFields.name.value = material.name;
   materialFields.filament_type.value = material.filament_type;
+  materialFields.category.value = material.category || "";
   materialFields.color.value = material.color;
   materialFields.supplier.value = material.supplier || "";
   materialFields.brand.value = material.brand || "";
   materialFields.price_per_gram.value = material.price_per_gram;
   materialFields.spool_weight_grams.value = material.spool_weight_grams;
+  materialFields.barcode.value = material.barcode || "";
   materialFields.notes.value = material.notes || "";
 }
 
@@ -595,11 +706,13 @@ function buildMaterialPayload() {
   return {
     name: materialFields.name.value.trim(),
     filament_type: materialFields.filament_type.value.trim(),
+    category: optionalString(materialFields.category.value),
     color: materialFields.color.value.trim(),
     supplier: optionalString(materialFields.supplier.value),
     brand: optionalString(materialFields.brand.value),
     price_per_gram: price,
     spool_weight_grams: Math.round(spool),
+    barcode: optionalString(materialFields.barcode.value),
     notes: optionalString(materialFields.notes.value),
   };
 }
@@ -778,12 +891,17 @@ async function api(path, { method = "GET", body, headers } = {}) {
     headers: {
       ...(headers || {}),
     },
+    credentials: "same-origin",
   };
   if (body !== undefined) {
     config.headers["Content-Type"] = "application/json";
     config.body = JSON.stringify(body);
   }
   const response = await fetch(path, config);
+  if (response.status === 401) {
+    window.location.href = "/login";
+    throw new Error("Unauthorized");
+  }
   if (response.status === 204) {
     return null;
   }
@@ -800,7 +918,9 @@ async function api(path, { method = "GET", body, headers } = {}) {
     } catch {
       // ignore JSON parse errors and fall back to raw string
     }
-    throw new Error(message);
+    const error = new Error(message);
+    error.status = response.status;
+    throw error;
   }
   if (!raw) {
     return null;
@@ -831,13 +951,113 @@ function escapeHtml(value) {
     .replace(/'/g, "&#39;");
 }
 
+function formatOrderStatus(value) {
+  if (!value) return "-";
+  return String(value)
+    .toLowerCase()
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function formatCurrencyValue(cents, currency) {
+  if (!Number.isFinite(Number(cents))) {
+    return "-";
+  }
+  const normalizedCurrency = typeof currency === "string" && currency.length >= 3 ? currency : "USD";
+  const amount = Number(cents) / 100;
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: normalizedCurrency.toUpperCase(),
+    }).format(amount);
+  } catch {
+    return `$${amount.toFixed(2)}`;
+  }
+}
+
+function summarizeLineItems(lineItems) {
+  if (!Array.isArray(lineItems) || lineItems.length === 0) {
+    return "-";
+  }
+  const parts = lineItems.slice(0, 3).map((item) => {
+    if (!item || typeof item !== "object") {
+      return "Line item";
+    }
+    const description = typeof item.description === "string" ? item.description.trim() : "";
+    const material = typeof item.material === "string" ? item.material.trim() : "";
+    const color = typeof item.color === "string" ? item.color.trim() : "";
+    const details = [description || "Line item"];
+    if (material) details.push(material);
+    if (color) details.push(color);
+    return details.join(" • ");
+  });
+  if (lineItems.length > 3) {
+    parts.push(`+${lineItems.length - 3} more`);
+  }
+  return parts.join("; ");
+}
+
+function formatTimestamp(value) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "-";
+  }
+  return date.toLocaleString();
+}
+
+function sanitizeTabSlug(value) {
+  if (value === null || value === undefined) {
+    return "";
+  }
+  return String(value).trim().toLowerCase().replace(/[^a-z0-9-]/g, "");
+}
+
+function getPanelIdFromSlug(rawValue) {
+  const slug = sanitizeTabSlug(rawValue);
+  if (!slug) return null;
+  const directPanel = document.getElementById(slug);
+  if (directPanel) {
+    return directPanel.id;
+  }
+  const candidate = slug.endsWith("-panel") ? slug : `${slug}-panel`;
+  const candidatePanel = document.getElementById(candidate);
+  return candidatePanel ? candidatePanel.id : null;
+}
+
+function getPanelIdFromQuery() {
+  try {
+    const currentUrl = new URL(window.location.href);
+    return getPanelIdFromSlug(currentUrl.searchParams.get(TAB_QUERY_PARAM));
+  } catch {
+    return null;
+  }
+}
+
+function syncTabQuery(panelId) {
+  try {
+    const currentUrl = new URL(window.location.href);
+    if (panelId) {
+      const slug = panelId.replace(/-panel$/i, "");
+      currentUrl.searchParams.set(TAB_QUERY_PARAM, slug);
+    } else {
+      currentUrl.searchParams.delete(TAB_QUERY_PARAM);
+    }
+    window.history.replaceState({}, "", currentUrl);
+  } catch {
+    // Ignore history errors (e.g., unsupported browsers)
+  }
+}
+
 function initTabs() {
   if (!tabButtons.length || !tabPanels.length) {
     return;
   }
+  const requestedTab = getPanelIdFromQuery();
   const activeButton = document.querySelector(".tab-button.active") || tabButtons[0];
-  const targetId =
+  const fallbackId =
     (activeButton && activeButton.dataset && activeButton.dataset.tabTarget) || (tabPanels[0] && tabPanels[0].id);
+  const targetId = requestedTab || fallbackId;
   if (targetId) {
     setActiveTab(targetId);
   }
@@ -850,7 +1070,7 @@ function initTabs() {
   });
 }
 
-function setActiveTab(targetId) {
+function setActiveTab(targetId, options = {}) {
   if (!targetId) return;
   const targetPanel = document.getElementById(targetId);
   if (!targetPanel) return;
@@ -864,4 +1084,7 @@ function setActiveTab(targetId) {
     panel.classList.toggle("active", isActive);
     panel.hidden = !isActive;
   });
+  if (!options.skipUrlSync) {
+    syncTabQuery(targetId);
+  }
 }

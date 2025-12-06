@@ -9,6 +9,7 @@ StockWorks is a browser-based inventory tool for 3D-printing studios. It combine
 - **Full REST API** for integrations, automation, or bulk operations. Swagger docs live at `/docs`.
 - **Optional desktop GUI** (`python -m app.gui`) built with Tkinter for teams that want a native-feeling app.
 - **Installable PWA** - the UI now ships with a web manifest plus platform icons so Android and iOS users can “Add to Home Screen” for a full-screen launcher experience.
+- **OrderWorks sync** - optionally mirror the MakerWorks/OrderWorks job queue inside StockWorks so production and inventory teams stay aligned.
 
 ## Run the web application
 1. Create/activate a virtual environment and install dependencies:
@@ -46,10 +47,22 @@ docker run \
 The container understands the following environment settings:
 
 - `PUID` / `PGID` - Linux user and group IDs used to run the process (defaults to `1000`/`1000`). Set these to match your Unraid user so `/data` permissions stay correct.
+- `UMASK` - File creation mask applied before the app starts (default `002`). Adjust if you need stricter or looser permissions on files inside `/data`.
 - `TZ` - Timezone string such as `UTC`, `America/New_York`, etc. Used for log timestamps.
 - `STOCKWORKS_DATA_DIR` - Directory inside the container for SQLite storage. Defaults to `/data` in Docker (and `./data` when running natively).
 - `STOCKWORKS_DB_FILENAME` - Name of the SQLite file within the data directory (default `app.db`).
 - `DATABASE_URL` - Optional override if you want to use PostgreSQL/MySQL instead of SQLite. When omitted we build `sqlite:///<STOCKWORKS_DATA_DIR>/<STOCKWORKS_DB_FILENAME>`.
+- `ORDERWORKS_BASE_URL`, `ORDERWORKS_ADMIN_USERNAME`, `ORDERWORKS_ADMIN_PASSWORD` - Optional OrderWorks integration. Point these at your OrderWorks deployment and supply valid admin credentials to enable the Orders tab.
+
+## OrderWorks integration
+
+If you also run [OrderWorks](https://github.com/schartrand77/orderworks) you can surface its MakerWorks job queue inside StockWorks:
+
+1. Set `ORDERWORKS_BASE_URL` to the accessible URL for your OrderWorks dashboard (e.g., `https://orders.makerworks.local`).
+2. Set `ORDERWORKS_ADMIN_USERNAME` / `ORDERWORKS_ADMIN_PASSWORD` to the same admin credentials you already use to log into OrderWorks.
+3. Restart StockWorks. A new **Orders** tab appears with live data pulled from `/api/jobs` plus quick links back to OrderWorks job detail pages.
+
+If the integration is not configured (or credentials are rejected) the Orders tab will display guidance instead of job data.
 
 ## Desktop GUI (optional)
 The Tkinter client is still available if you prefer a native desktop workflow:
