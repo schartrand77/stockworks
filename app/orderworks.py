@@ -57,10 +57,13 @@ class OrderWorksClient:
                 return
             client = self._get_client()
             client.cookies.clear()
-            response = client.post(
-                "/api/auth/login",
-                json={"username": self.username, "password": self.password},
-            )
+            try:
+                response = client.post(
+                    "/api/auth/login",
+                    json={"username": self.username, "password": self.password},
+                )
+            except httpx.HTTPError as exc:
+                raise OrderWorksIntegrationError(f"Failed to contact OrderWorks during login: {exc}") from exc
             if response.status_code == 401:
                 raise OrderWorksAuthenticationError("OrderWorks credentials were rejected.")
             try:
@@ -76,10 +79,16 @@ class OrderWorksClient:
             raise OrderWorksNotConfiguredError("OrderWorks integration is not configured.")
         self._login()
         client = self._get_client()
-        response = client.request(method, path, **kwargs)
+        try:
+            response = client.request(method, path, **kwargs)
+        except httpx.HTTPError as exc:
+            raise OrderWorksIntegrationError(f"Failed to contact OrderWorks: {exc}") from exc
         if response.status_code == 401:
             self._login(force=True)
-            response = client.request(method, path, **kwargs)
+            try:
+                response = client.request(method, path, **kwargs)
+            except httpx.HTTPError as exc:
+                raise OrderWorksIntegrationError(f"Failed to contact OrderWorks after refreshing the session: {exc}") from exc
         return response
 
     def list_jobs(self, params: Optional[Dict[str, Any]] = None) -> Any:
