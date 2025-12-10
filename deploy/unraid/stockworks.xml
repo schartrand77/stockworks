@@ -68,6 +68,14 @@
       <Required>true</Required>
       <Mask>false</Mask>
     </Variable>
+    <Variable>
+      <Name>DATABASE_URL</Name>
+      <Value>postgresql://postgres:postgres@localhost:5432/makerworks?schema=orderworks</Value>
+      <Description>Optional PostgreSQL DSN shared with MakerWorks/OrderWorks.</Description>
+      <Display>always</Display>
+      <Required>false</Required>
+      <Mask>true</Mask>
+    </Variable>
   </Environment>
   <Data>
     <Volume>
