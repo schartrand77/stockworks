@@ -18,9 +18,11 @@ from starlette.middleware.sessions import SessionMiddleware
 from .db import get_session, init_db
 from .orderworks import (
     OrderWorksAuthenticationError,
+    OrderWorksDatabaseUnavailableError,
     OrderWorksIntegrationError,
     OrderWorksNotConfiguredError,
     get_orderworks_client,
+    list_orderworks_jobs_via_database,
 )
 from .models import (
     HardwareItem,
@@ -392,17 +394,33 @@ def calculate_quote(
 
 
 @app.get("/orderworks/jobs")
-def fetch_orderworks_jobs(_: bool = Depends(require_auth)):
-    client = get_orderworks_client()
+def fetch_orderworks_jobs(
+    _: bool = Depends(require_auth),
+    session: Session = Depends(get_session),
+):
+    base_url_override = os.environ.get("ORDERWORKS_BASE_URL", "")
     try:
-        jobs = client.list_jobs()
-    except OrderWorksNotConfiguredError:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="OrderWorks integration is not configured.")
-    except OrderWorksAuthenticationError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
-    except OrderWorksIntegrationError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
-    return {"jobs": jobs, "base_url": client.base_url}
+        jobs = list_orderworks_jobs_via_database(session)
+    except OrderWorksDatabaseUnavailableError:
+        client = get_orderworks_client()
+        if not client.is_configured:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="OrderWorks integration is not configured. Provide ORDERWORKS_* credentials or point DATABASE_URL at the MakerWorks database.",
+            )
+        try:
+            jobs = client.list_jobs()
+        except OrderWorksNotConfiguredError:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="OrderWorks integration is not configured.",
+            )
+        except OrderWorksAuthenticationError as exc:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+        except OrderWorksIntegrationError as exc:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+        return {"jobs": jobs, "base_url": client.base_url}
+    return {"jobs": jobs, "base_url": base_url_override}
 
 
 @app.get("/health", tags=["system"])

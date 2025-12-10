@@ -4,9 +4,12 @@ from __future__ import annotations
 import os
 import threading
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import httpx
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
+from sqlmodel import Session
 
 ORDERWORKS_SESSION_REFRESH_SECONDS = 60 * 60 * 6  # refresh every 6 hours
 
@@ -21,6 +24,10 @@ class OrderWorksNotConfiguredError(OrderWorksIntegrationError):
 
 class OrderWorksAuthenticationError(OrderWorksIntegrationError):
     """Raised when authentication with OrderWorks fails."""
+
+
+class OrderWorksDatabaseUnavailableError(OrderWorksIntegrationError):
+    """Raised when OrderWorks tables cannot be queried via the shared database."""
 
 
 class OrderWorksClient:
@@ -119,3 +126,44 @@ def get_orderworks_client() -> OrderWorksClient:
             password=os.environ.get("ORDERWORKS_ADMIN_PASSWORD"),
         )
     return _ORDERWORKS_CLIENT
+
+
+_ORDERWORKS_JOB_QUERY = text(
+    """
+    SELECT
+        id,
+        payment_intent_id AS "paymentIntentId",
+        total_cents AS "totalCents",
+        currency,
+        line_items AS "lineItems",
+        shipping,
+        metadata,
+        user_id AS "userId",
+        customer_email AS "customerEmail",
+        makerworks_created_at AS "makerworksCreatedAt",
+        makerworks_updated_at AS "makerworksUpdatedAt",
+        status,
+        notes,
+        payment_method AS "paymentMethod",
+        payment_status AS "paymentStatus",
+        fulfillment_status AS "fulfillmentStatus",
+        fulfilled_at AS "fulfilledAt",
+        queue_position AS "queuePosition",
+        created_at AS "createdAt",
+        updated_at AS "updatedAt"
+    FROM orderworks.jobs
+    ORDER BY makerworks_created_at DESC, created_at DESC
+    LIMIT :limit
+    """
+)
+
+
+def list_orderworks_jobs_via_database(session: Session, limit: int = 200) -> List[Dict[str, Any]]:
+    """Return OrderWorks jobs directly from the shared MakerWorks/Postgres database."""
+
+    try:
+        result = session.exec(_ORDERWORKS_JOB_QUERY.bindparams(limit=limit))
+    except SQLAlchemyError as exc:
+        raise OrderWorksDatabaseUnavailableError("Unable to query OrderWorks tables via the configured database.") from exc
+    rows = result.mappings().all()
+    return [dict(row) for row in rows]

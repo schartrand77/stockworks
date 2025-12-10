@@ -340,7 +340,7 @@ function renderOrderWorks() {
   if (orderworksStatusEl) {
     if (!state.orderworksConfigured) {
       orderworksStatusEl.textContent =
-        "OrderWorks integration is not configured. Set ORDERWORKS_* variables to enable this view.";
+        "OrderWorks integration is not configured. Connect StockWorks to the MakerWorks database or provide ORDERWORKS_* credentials.";
       orderworksStatusEl.classList.remove("error");
       orderworksStatusEl.classList.add("muted");
     } else if (state.orderworksError) {

@@ -52,17 +52,18 @@ The container understands the following environment settings:
 - `STOCKWORKS_DATA_DIR` - Directory inside the container for SQLite storage. Defaults to `/data` in Docker (and `./data` when running natively).
 - `STOCKWORKS_DB_FILENAME` - Name of the SQLite file within the data directory (default `app.db`).
 - `DATABASE_URL` - Optional override if you want to use PostgreSQL/MySQL instead of SQLite. When omitted we build `sqlite:///<STOCKWORKS_DATA_DIR>/<STOCKWORKS_DB_FILENAME>`.
-- `ORDERWORKS_BASE_URL`, `ORDERWORKS_ADMIN_USERNAME`, `ORDERWORKS_ADMIN_PASSWORD` - Optional OrderWorks integration. Point these at your OrderWorks deployment and supply valid admin credentials to enable the Orders tab.
+- `ORDERWORKS_BASE_URL` - Optional base URL used for "Open" links in the Orders tab. Leave blank if you do not need shortcuts back to OrderWorks.
+- `ORDERWORKS_ADMIN_USERNAME`, `ORDERWORKS_ADMIN_PASSWORD` - Only required when StockWorks cannot read jobs directly from the MakerWorks database and must call the OrderWorks HTTP API.
 
 ## OrderWorks integration
 
 If you also run [OrderWorks](https://github.com/schartrand77/orderworks) you can surface its MakerWorks job queue inside StockWorks:
 
-1. Set `ORDERWORKS_BASE_URL` to the accessible URL for your OrderWorks dashboard (e.g., `https://orders.makerworks.local`).
-2. Set `ORDERWORKS_ADMIN_USERNAME` / `ORDERWORKS_ADMIN_PASSWORD` to the same admin credentials you already use to log into OrderWorks.
-3. Restart StockWorks. A new **Orders** tab appears with live data pulled from `/api/jobs` plus quick links back to OrderWorks job detail pages.
+- Point `DATABASE_URL` at the same MakerWorks Postgres instance shared with OrderWorks. StockWorks will read jobs directly from the `orderworks.jobs` table and populate the **Orders** tab automatically—no additional variables required.
+- Optionally set `ORDERWORKS_BASE_URL` so the "Open" links inside the Orders table jump straight to the OrderWorks dashboard entry.
+- Only when StockWorks cannot connect to the MakerWorks database (for example you remain on SQLite or network policies block database access) do you need to provide `ORDERWORKS_BASE_URL`, `ORDERWORKS_ADMIN_USERNAME`, and `ORDERWORKS_ADMIN_PASSWORD`. In that scenario StockWorks falls back to pulling data from the OrderWorks HTTP API using those credentials.
 
-If the integration is not configured (or credentials are rejected) the Orders tab will display guidance instead of job data.
+If neither the shared database nor the HTTP credentials are available, the Orders tab displays guidance instead of job data.
 
 ## Desktop GUI (optional)
 The Tkinter client is still available if you prefer a native desktop workflow:
