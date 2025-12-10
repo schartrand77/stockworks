@@ -14,75 +14,17 @@
   <TemplateURL>https://raw.githubusercontent.com/steph/stockworks/main/deploy/unraid/stockworks.xml</TemplateURL>
   <Icon>https://raw.githubusercontent.com/steph/stockworks/main/app/static/icon-192.png</Icon>
   <ExtraParams>--restart unless-stopped</ExtraParams>
-  <PostArgs></PostArgs>
-  <CPUset></CPUset>
-  <Description>StockWorks offers a combined material tracker, hardware inventory, movement log, and quote builder through a single-page app backed by FastAPI.</Description>
-  <Networking>
-    <Mode>bridge</Mode>
-    <Publish>
-      <Port>
-        <HostPort>8000</HostPort>
-        <ContainerPort>8000</ContainerPort>
-        <Protocol>tcp</Protocol>
-      </Port>
-    </Publish>
-  </Networking>
-  <Environment>
-    <Variable>
-      <Name>PUID</Name>
-      <Value>99</Value>
-      <Description>User ID that should own the /data volume.</Description>
-      <Display>advanced-hide</Display>
-      <Required>true</Required>
-      <Mask>false</Mask>
-    </Variable>
-    <Variable>
-      <Name>PGID</Name>
-      <Value>100</Value>
-      <Description>Group ID that should own the /data volume.</Description>
-      <Display>advanced-hide</Display>
-      <Required>true</Required>
-      <Mask>false</Mask>
-    </Variable>
-    <Variable>
-      <Name>UMASK</Name>
-      <Value>002</Value>
-      <Description>File creation mask applied before StockWorks starts.</Description>
-      <Display>advanced-hide</Display>
-      <Required>false</Required>
-      <Mask>false</Mask>
-    </Variable>
-    <Variable>
-      <Name>TZ</Name>
-      <Value>UTC</Value>
-      <Description>Timezone used for the application logs.</Description>
-      <Display>always</Display>
-      <Required>true</Required>
-      <Mask>false</Mask>
-    </Variable>
-    <Variable>
-      <Name>STOCKWORKS_DATA_DIR</Name>
-      <Value>/data</Value>
-      <Description>Path inside the container mapped to your persistent SQLite storage.</Description>
-      <Display>advanced-hide</Display>
-      <Required>true</Required>
-      <Mask>false</Mask>
-    </Variable>
-    <Variable>
-      <Name>DATABASE_URL</Name>
-      <Value>postgresql://postgres:postgres@localhost:5432/makerworks?schema=orderworks</Value>
-      <Description>Optional PostgreSQL DSN shared with MakerWorks/OrderWorks.</Description>
-      <Display>always</Display>
-      <Required>false</Required>
-      <Mask>true</Mask>
-    </Variable>
-  </Environment>
-  <Data>
-    <Volume>
-      <HostDir>/mnt/user/appdata/stockworks</HostDir>
-      <ContainerDir>/data</ContainerDir>
-      <Mode>rw</Mode>
-      <Description>Persistent SQLite database and attachments.</Description>
-    </Volume>
-  </Data>
+  <Config Name="Web UI Port" Target="8000" Default="8000" Mode="tcp" Description="Container port exposed by the FastAPI server" Type="Port" Display="always" Required="true" Mask="false" />
+  <Config Name="Appdata Storage" Target="/data" Default="/mnt/user/appdata/stockworks" Description="Host path that stores the SQLite database and attachments" Type="Path" Display="always" Required="true" Mask="false" />
+  <Config Name="PUID" Target="PUID" Default="99" Description="User ID that owns files written inside the container" Type="Variable" Display="advanced" Required="true" Mask="false" />
+  <Config Name="PGID" Target="PGID" Default="100" Description="Group ID that owns files written inside the container" Type="Variable" Display="advanced" Required="true" Mask="false" />
+  <Config Name="UMASK" Target="UMASK" Default="002" Description="File creation mask applied before StockWorks starts" Type="Variable" Display="advanced" Required="false" Mask="false" />
+  <Config Name="Timezone" Target="TZ" Default="UTC" Description="Timezone used for logs" Type="Variable" Display="always" Required="true" Mask="false" />
+  <Config Name="Database URL" Target="DATABASE_URL" Default="postgresql://postgres:postgres@localhost:5432/makerworks?schema=orderworks" Description="Optional PostgreSQL DSN shared with MakerWorks/OrderWorks" Type="Variable" Display="always" Required="false" Mask="true" />
+  <Config Name="Data Directory" Target="STOCKWORKS_DATA_DIR" Default="/data" Description="Location inside the container that holds the SQLite file" Type="Variable" Display="advanced" Required="true" Mask="false" />
+  <Config Name="Database Filename" Target="STOCKWORKS_DB_FILENAME" Default="app.db" Description="SQLite filename stored under STOCKWORKS_DATA_DIR" Type="Variable" Display="advanced" Required="true" Mask="false" />
+  <Config Name="Admin Username" Target="ADMIN_USERNAME" Default="admin" Description="Credential required to log into the StockWorks UI" Type="Variable" Display="always" Required="true" Mask="false" />
+  <Config Name="Admin Password" Target="ADMIN_PASSWORD" Default="changeme" Description="Credential required to log into the StockWorks UI" Type="Variable" Display="always" Required="true" Mask="true" />
+  <Config Name="Secret Key" Target="SECRET_KEY" Default="please-change-me" Description="Secret used to sign session cookies" Type="Variable" Display="always" Required="true" Mask="true" />
+  <Config Name="OrderWorks Base URL" Target="ORDERWORKS_BASE_URL" Default="" Description="Optional OrderWorks dashboard URL used for \"Open\" links" Type="Variable" Display="advanced" Required="false" Mask="false" />
 </Container>
