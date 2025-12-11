@@ -36,6 +36,13 @@
   --sap-grid-line: rgba(32, 56, 88, 0.04);
   --sap-scroll-track: rgba(15, 31, 57, 0.08);
   --sap-scroll-thumb: rgba(15, 31, 57, 0.28);
+  --sap-page-gradient-start: #f8f9fc;
+  --sap-page-gradient-mid: #eef2f8;
+  --sap-page-gradient-end: #f4f6fb;
+  --sap-input-bg: #ffffff;
+  --sap-placeholder: #9aa4b3;
+  --sap-success-bg: #eef7f1;
+  --sap-table-wrapper-shadow: inset 0 1px 0 rgba(15, 31, 57, 0.03);
 }
 
 ::selection {
@@ -51,7 +58,12 @@ body {
 body {
   margin: 0;
   color: var(--sap-text);
-  background: linear-gradient(180deg, #f8f9fc, #eef2f8 45%, #f4f6fb 100%);
+  background: linear-gradient(
+    180deg,
+    var(--sap-page-gradient-start),
+    var(--sap-page-gradient-mid) 45%,
+    var(--sap-page-gradient-end) 100%
+  );
   min-height: 100vh;
   font-family: var(--sap-font);
   letter-spacing: 0.01em;
@@ -161,7 +173,7 @@ body::after {
 .message.success {
   border-color: rgba(16, 126, 62, 0.4);
   color: var(--sap-accent);
-  background: #eef7f1;
+  background: var(--sap-success-bg);
 }
 
 .message.error {
@@ -278,7 +290,7 @@ textarea {
   border-radius: var(--sap-radius-sm);
   border: 1px solid var(--sap-border);
   padding: 0.75rem 0.9rem;
-  background: #fff;
+  background: var(--sap-input-bg);
   color: var(--sap-text);
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
@@ -290,7 +302,7 @@ textarea {
 
 input::placeholder,
 textarea::placeholder {
-  color: #9aa4b3;
+  color: var(--sap-placeholder);
 }
 
 input:focus,
@@ -381,8 +393,8 @@ button.danger:hover {
   overflow-x: auto;
   border-radius: var(--sap-radius-md);
   border: 1px solid var(--sap-border);
-  background: #fff;
-  box-shadow: inset 0 1px 0 rgba(15, 31, 57, 0.03);
+  background: var(--sap-surface);
+  box-shadow: var(--sap-table-wrapper-shadow);
 }
 
 table {
@@ -490,6 +502,48 @@ th:last-child {
   background: var(--sap-primary-strong);
   color: #fff;
   text-decoration: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --sap-bg: #050b18;
+    --sap-surface: #0f192a;
+    --sap-surface-alt: #101b2f;
+    --sap-surface-muted: #132237;
+    --sap-border: #1d2c44;
+    --sap-border-strong: #2c405d;
+    --sap-divider: #1a283f;
+    --sap-text: #e4ecfa;
+    --sap-text-muted: #8e9fbf;
+    --sap-heading: #f8fbff;
+    --sap-primary: #7bb7ff;
+    --sap-primary-strong: #c0deff;
+    --sap-primary-soft: rgba(123, 183, 255, 0.25);
+    --sap-accent: #5cd3b3;
+    --sap-danger: #ff8a7a;
+    --sap-danger-soft: rgba(255, 138, 122, 0.18);
+    --sap-shadow-soft: 0 10px 35px rgba(0, 0, 0, 0.65);
+    --sap-shadow-card: 0 8px 28px rgba(0, 0, 0, 0.7);
+    --sap-grid-line: rgba(255, 255, 255, 0.04);
+    --sap-scroll-track: rgba(15, 22, 37, 0.7);
+    --sap-scroll-thumb: rgba(126, 147, 191, 0.5);
+    --sap-page-gradient-start: #050b18;
+    --sap-page-gradient-mid: #050c1e;
+    --sap-page-gradient-end: #040814;
+    --sap-input-bg: #0a1526;
+    --sap-placeholder: #7583a1;
+    --sap-success-bg: rgba(16, 126, 62, 0.2);
+    --sap-table-wrapper-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  }
+
+  body::after {
+    opacity: 0.35;
+  }
+
+  .tab-nav {
+    box-shadow: none;
+  }
 }
 
 @media (max-width: 960px) {

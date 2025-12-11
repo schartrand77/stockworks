@@ -49,6 +49,7 @@ from .models import (
 )
 
 BASE_DIR = Path(__file__).resolve().parent
+PUBLIC_DIR = BASE_DIR.parent / "public"
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
@@ -74,6 +75,8 @@ app.add_middleware(
     same_site="lax",
 )
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
+if PUBLIC_DIR.exists():
+    app.mount("/public", StaticFiles(directory=PUBLIC_DIR), name="public")
 
 
 @app.on_event("startup")
