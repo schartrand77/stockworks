@@ -401,12 +401,12 @@ def fetch_orderworks_jobs(
     base_url_override = os.environ.get("ORDERWORKS_BASE_URL", "")
     try:
         jobs = list_orderworks_jobs_via_database(session)
-    except OrderWorksDatabaseUnavailableError:
+    except OrderWorksDatabaseUnavailableError as db_error:
         client = get_orderworks_client()
         if not client.is_configured:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="OrderWorks integration is not configured. Provide ORDERWORKS_* credentials or point DATABASE_URL at the MakerWorks database.",
+                detail=f"{db_error}. Provide ORDERWORKS_* credentials for HTTP fallback or verify DATABASE_URL.",
             )
         try:
             jobs = client.list_jobs()

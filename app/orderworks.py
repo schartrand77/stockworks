@@ -4,7 +4,8 @@ from __future__ import annotations
 import os
 import threading
 import time
-from typing import Any, Dict, List, Optional
+from dataclasses import dataclass
+from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 import httpx
 from sqlalchemy import text
@@ -128,42 +129,143 @@ def get_orderworks_client() -> OrderWorksClient:
     return _ORDERWORKS_CLIENT
 
 
-_ORDERWORKS_JOB_QUERY = text(
-    """
-    SELECT
-        id,
-        payment_intent_id AS "paymentIntentId",
-        total_cents AS "totalCents",
-        currency,
-        line_items AS "lineItems",
-        shipping,
-        metadata,
-        user_id AS "userId",
-        customer_email AS "customerEmail",
-        makerworks_created_at AS "makerworksCreatedAt",
-        makerworks_updated_at AS "makerworksUpdatedAt",
-        status,
-        notes,
-        payment_method AS "paymentMethod",
-        payment_status AS "paymentStatus",
-        fulfillment_status AS "fulfillmentStatus",
-        fulfilled_at AS "fulfilledAt",
-        queue_position AS "queuePosition",
-        created_at AS "createdAt",
-        updated_at AS "updatedAt"
-    FROM orderworks.jobs
-    ORDER BY makerworks_created_at DESC, created_at DESC
-    LIMIT :limit
-    """
-)
+@dataclass(frozen=True)
+class ColumnMapping:
+    names: Sequence[str]
+    alias: str
+    required: bool = False
+
+
+_ORDERWORKS_JOB_TABLE = "orderworks.jobs"
+_ORDERWORKS_JOB_COLUMNS: List[ColumnMapping] = [
+    ColumnMapping(("id",), "id", required=True),
+    ColumnMapping(("payment_intent_id", "paymentIntentId"), "paymentIntentId"),
+    ColumnMapping(("total_cents", "totalCents"), "totalCents"),
+    ColumnMapping(("currency",), "currency"),
+    ColumnMapping(("line_items", "lineItems"), "lineItems"),
+    ColumnMapping(("shipping",), "shipping"),
+    ColumnMapping(("metadata",), "metadata"),
+    ColumnMapping(("user_id", "userId"), "userId"),
+    ColumnMapping(("customer_email", "customerEmail"), "customerEmail"),
+    ColumnMapping(("makerworks_created_at",), "makerworksCreatedAt"),
+    ColumnMapping(("makerworks_updated_at",), "makerworksUpdatedAt"),
+    ColumnMapping(("status",), "status"),
+    ColumnMapping(("notes",), "notes"),
+    ColumnMapping(("payment_method", "paymentMethod"), "paymentMethod"),
+    ColumnMapping(("payment_status", "paymentStatus"), "paymentStatus"),
+    ColumnMapping(("fulfillment_status", "fulfillmentStatus"), "fulfillmentStatus"),
+    ColumnMapping(("fulfilled_at", "fulfilledAt"), "fulfilledAt"),
+    ColumnMapping(("queue_position", "queuePosition"), "queuePosition"),
+    ColumnMapping(("created_at", "createdAt"), "createdAt"),
+    ColumnMapping(("updated_at", "updatedAt"), "updatedAt"),
+]
+
+
+def _quote_identifier(identifier: str) -> str:
+    escaped = identifier.replace('"', '""')
+    return f'"{escaped}"'
+
+
+def _split_table_identifier(identifier: str) -> tuple[Optional[str], str]:
+    if "." in identifier:
+        schema, table = identifier.split(".", 1)
+        return schema, table
+    return None, identifier
+
+
+def _quote_table(schema: Optional[str], table: str) -> str:
+    quoted_table = _quote_identifier(table)
+    if schema:
+        return f"{_quote_identifier(schema)}.{quoted_table}"
+    return quoted_table
+
+
+def _fetch_available_columns(session: Session, schema: Optional[str], table: str) -> set[str]:
+    connection = session.connection()
+    dialect_name = connection.dialect.name
+    columns: set[str] = set()
+    if dialect_name == "sqlite":
+        result = connection.exec_driver_sql(f"PRAGMA table_info({table})")
+        columns = {row[1] for row in result}
+    else:
+        params = {"table": table}
+        predicate = "table_name = :table"
+        if schema:
+            params["schema"] = schema
+            predicate += " AND table_schema = :schema"
+        query = text(f"SELECT column_name FROM information_schema.columns WHERE {predicate}")
+        result = connection.execute(query, params)
+        columns = {row[0] for row in result}
+    return columns
+
+
+def _match_column(available: Iterable[str], candidate: str) -> Optional[str]:
+    for existing in available:
+        if existing == candidate or existing.lower() == candidate.lower():
+            return existing
+    return None
+
+
+def _find_matching_column(available: set[str], candidates: Sequence[str]) -> Optional[str]:
+    for candidate in candidates:
+        match = _match_column(available, candidate)
+        if match:
+            return match
+    return None
+
+
+def _build_jobs_query(session: Session) -> text:
+    schema, table = _split_table_identifier(_ORDERWORKS_JOB_TABLE)
+    available_columns = _fetch_available_columns(session, schema, table)
+    select_parts: List[str] = []
+    column_expr_map: Dict[str, Optional[str]] = {}
+
+    for mapping in _ORDERWORKS_JOB_COLUMNS:
+        alias_sql = _quote_identifier(mapping.alias)
+        matched_column = _find_matching_column(available_columns, mapping.names)
+        if not matched_column:
+            if mapping.required:
+                readable = ", ".join(mapping.names)
+                raise OrderWorksDatabaseUnavailableError(
+                    f"OrderWorks table {_ORDERWORKS_JOB_TABLE} is missing required column(s): {readable}."
+                )
+            select_parts.append(f"NULL AS {alias_sql}")
+            column_expr_map[mapping.alias] = None
+            continue
+        column_expr = _quote_identifier(matched_column)
+        select_parts.append(f"{column_expr} AS {alias_sql}")
+        column_expr_map[mapping.alias] = column_expr
+
+    order_aliases = ("makerworksCreatedAt", "createdAt", "id")
+    order_fragments: List[str] = []
+    for alias in order_aliases:
+        column_expr = column_expr_map.get(alias)
+        if column_expr:
+            direction = "DESC"
+            order_fragments.append(f"{column_expr} {direction}")
+    if not order_fragments:
+        order_fragments.append(f"{_quote_identifier('id')} DESC")
+
+    columns_sql = ",\n        ".join(select_parts)
+    table_sql = _quote_table(schema, table)
+    order_sql = ", ".join(order_fragments)
+    sql = (
+        "SELECT\n        "
+        + columns_sql
+        + f"\n    FROM {table_sql}\n    ORDER BY {order_sql}\n    LIMIT :limit"
+    )
+    return text(sql)
 
 
 def list_orderworks_jobs_via_database(session: Session, limit: int = 200) -> List[Dict[str, Any]]:
     """Return OrderWorks jobs directly from the shared MakerWorks/Postgres database."""
 
     try:
-        result = session.exec(_ORDERWORKS_JOB_QUERY.bindparams(limit=limit))
+        query = _build_jobs_query(session)
+        result = session.exec(query.bindparams(limit=limit))
     except SQLAlchemyError as exc:
-        raise OrderWorksDatabaseUnavailableError("Unable to query OrderWorks tables via the configured database.") from exc
+        raise OrderWorksDatabaseUnavailableError(
+            f"Unable to query OrderWorks tables via the configured database: {exc}"
+        ) from exc
     rows = result.mappings().all()
     return [dict(row) for row in rows]

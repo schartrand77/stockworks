@@ -60,7 +60,7 @@ def create_db_engine():
     database_url, schema = _strip_schema_parameter(database_url)
     connect_args = {"check_same_thread": False} if database_url.startswith("sqlite") else {}
     if schema and not database_url.startswith("sqlite"):
-        schema_option = f"-csearch_path={schema}"
+        schema_option = f"-c search_path={schema}"
         existing_options = connect_args.get("options")
         connect_args["options"] = f"{existing_options} {schema_option}".strip() if existing_options else schema_option
     return create_engine(database_url, connect_args=connect_args)
