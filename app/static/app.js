@@ -95,8 +95,31 @@ const hardwareMovementTableBody = document.querySelector("#hardware-movement-tab
 const orderworksTableBody = document.querySelector("#orderworks-table tbody");
 const orderworksRefreshBtn = document.getElementById("orderworks-refresh");
 const orderworksStatusEl = document.getElementById("orderworks-status");
+let themeToggleBtn = null;
+let themeToggleLabelEl = null;
+
+const THEME_STORAGE_KEY = "stockworks-theme";
+const VALID_THEME_CHOICES = new Set(["light", "dark"]);
+const prefersDarkScheme = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+let forcedThemeChoice = loadStoredThemeChoice();
+applyThemePreference(forcedThemeChoice);
+
+if (prefersDarkScheme) {
+  const mediaListener = () => {
+    if (!forcedThemeChoice) {
+      applyThemePreference(null);
+    }
+  };
+  if (typeof prefersDarkScheme.addEventListener === "function") {
+    prefersDarkScheme.addEventListener("change", mediaListener);
+  } else if (typeof prefersDarkScheme.addListener === "function") {
+    prefersDarkScheme.addListener(mediaListener);
+  }
+}
 
 document.addEventListener("DOMContentLoaded", () => {
+  applyThemePreference(forcedThemeChoice);
+  initThemeToggle();
   initTabs();
   bindEvents();
   refreshAll();
@@ -1086,5 +1109,104 @@ function setActiveTab(targetId, options = {}) {
   });
   if (!options.skipUrlSync) {
     syncTabQuery(targetId);
+  }
+}
+
+function initThemeToggle() {
+  themeToggleBtn = document.getElementById("theme-toggle");
+  if (!themeToggleBtn) {
+    return;
+  }
+  themeToggleLabelEl = themeToggleBtn.querySelector("[data-theme-toggle-label]");
+  updateThemeToggleUi(getCurrentTheme());
+  themeToggleBtn.addEventListener("click", () => {
+    const current = getCurrentTheme();
+    const nextTheme = current === "dark" ? "light" : "dark";
+    forcedThemeChoice = nextTheme;
+    persistThemeChoice(nextTheme);
+    applyThemePreference(nextTheme);
+  });
+}
+
+function getSystemTheme() {
+  if (prefersDarkScheme && prefersDarkScheme.matches) {
+    return "dark";
+  }
+  return "light";
+}
+
+function getCurrentTheme() {
+  const applied = getAppliedTheme();
+  if (applied) {
+    return applied;
+  }
+  if (forcedThemeChoice) {
+    return forcedThemeChoice;
+  }
+  return getSystemTheme();
+}
+
+function getAppliedTheme() {
+  const rootTheme = document.documentElement.getAttribute("data-theme");
+  if (rootTheme === "light" || rootTheme === "dark") {
+    return rootTheme;
+  }
+  return null;
+}
+
+function loadStoredThemeChoice() {
+  try {
+    const stored = localStorage.getItem(THEME_STORAGE_KEY);
+    if (stored && VALID_THEME_CHOICES.has(stored)) {
+      return stored;
+    }
+  } catch {
+    // Ignore storage access issues
+  }
+  return null;
+}
+
+function persistThemeChoice(value) {
+  try {
+    if (value && VALID_THEME_CHOICES.has(value)) {
+      localStorage.setItem(THEME_STORAGE_KEY, value);
+    } else {
+      localStorage.removeItem(THEME_STORAGE_KEY);
+    }
+  } catch {
+    // Ignore storage access issues
+  }
+}
+
+function applyThemePreference(theme) {
+  const root = document.documentElement;
+  let activeTheme = theme;
+  if (theme === "light" || theme === "dark") {
+    root.setAttribute("data-theme", theme);
+  } else {
+    root.removeAttribute("data-theme");
+    activeTheme = getSystemTheme();
+  }
+  if (activeTheme !== "light" && activeTheme !== "dark") {
+    activeTheme = "light";
+  }
+  root.setAttribute("data-active-theme", activeTheme);
+  if (document.body) {
+    document.body.setAttribute("data-active-theme", activeTheme);
+  }
+  updateThemeToggleUi(activeTheme);
+}
+
+function updateThemeToggleUi(activeTheme = getCurrentTheme()) {
+  if (!themeToggleBtn) {
+    return;
+  }
+  const isDark = activeTheme === "dark";
+  themeToggleBtn.setAttribute("aria-pressed", isDark ? "true" : "false");
+  const label = isDark ? "Switch to light theme" : "Switch to dark theme";
+  themeToggleBtn.setAttribute("aria-label", label);
+  themeToggleBtn.setAttribute("title", label);
+  if (themeToggleLabelEl) {
+    themeToggleLabelEl.textContent = label;
   }
 }

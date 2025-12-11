@@ -45,6 +45,46 @@
   --sap-table-wrapper-shadow: inset 0 1px 0 rgba(15, 31, 57, 0.03);
 }
 
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --sap-bg: #050b18;
+  --sap-surface: #0f192a;
+  --sap-surface-alt: #101b2f;
+  --sap-surface-muted: #132237;
+  --sap-border: #1d2c44;
+  --sap-border-strong: #2c405d;
+  --sap-divider: #1a283f;
+  --sap-text: #e4ecfa;
+  --sap-text-muted: #8e9fbf;
+  --sap-heading: #f8fbff;
+  --sap-primary: #7bb7ff;
+  --sap-primary-strong: #c0deff;
+  --sap-primary-soft: rgba(123, 183, 255, 0.25);
+  --sap-accent: #5cd3b3;
+  --sap-danger: #ff8a7a;
+  --sap-danger-soft: rgba(255, 138, 122, 0.18);
+  --sap-shadow-soft: 0 10px 35px rgba(0, 0, 0, 0.65);
+  --sap-shadow-card: 0 8px 28px rgba(0, 0, 0, 0.7);
+  --sap-grid-line: rgba(255, 255, 255, 0.04);
+  --sap-scroll-track: rgba(15, 22, 37, 0.7);
+  --sap-scroll-thumb: rgba(126, 147, 191, 0.5);
+  --sap-page-gradient-start: #050b18;
+  --sap-page-gradient-mid: #050c1e;
+  --sap-page-gradient-end: #040814;
+  --sap-input-bg: #0a1526;
+  --sap-placeholder: #7583a1;
+  --sap-success-bg: rgba(16, 126, 62, 0.2);
+  --sap-table-wrapper-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+:root[data-theme="dark"] body::after {
+  opacity: 0.35;
+}
+
+:root[data-theme="dark"] .tab-nav {
+  box-shadow: none;
+}
+
 ::selection {
   background: rgba(10, 110, 209, 0.25);
   color: var(--sap-heading);
@@ -79,6 +119,18 @@ body::after {
   background-size: 80px 80px;
   opacity: 0.7;
   pointer-events: none;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+  white-space: nowrap;
 }
 
 ::-webkit-scrollbar {
@@ -362,6 +414,69 @@ button.danger:hover {
   color: #a5362c;
 }
 
+.theme-toggle {
+  position: relative;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  border: 1px solid var(--sap-border);
+  background: var(--sap-surface);
+  color: var(--sap-heading);
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.theme-toggle:hover {
+  background: var(--sap-surface-alt);
+  border-color: var(--sap-border-strong);
+  text-decoration: none;
+  transform: translateY(-1px);
+}
+
+.theme-toggle:focus-visible {
+  outline: 2px solid var(--sap-primary);
+  outline-offset: 3px;
+  text-decoration: none;
+}
+
+.theme-icon {
+  width: 1.1rem;
+  height: 1.1rem;
+  fill: currentColor;
+  position: absolute;
+  transition: opacity 0.2s ease, transform 0.25s ease;
+}
+
+.theme-icon-moon {
+  opacity: 0;
+  transform: scale(0.75);
+}
+
+:root[data-active-theme="dark"] .theme-icon-sun,
+:root:not([data-active-theme]) .theme-icon-sun {
+  opacity: 0;
+  transform: scale(0.75) rotate(-20deg);
+}
+
+:root[data-active-theme="dark"] .theme-icon-moon,
+:root:not([data-active-theme]) .theme-icon-moon {
+  opacity: 1;
+  transform: scale(1);
+}
+
+:root[data-active-theme="light"] .theme-icon-sun {
+  opacity: 1;
+  transform: scale(1);
+}
+
+:root[data-active-theme="light"] .theme-icon-moon {
+  opacity: 0;
+  transform: scale(0.6) rotate(20deg);
+}
+
 .tab-button {
   border: 1px solid transparent;
   border-radius: 999px;
@@ -505,7 +620,7 @@ th:last-child {
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme]) {
     color-scheme: dark;
     --sap-bg: #050b18;
     --sap-surface: #0f192a;
@@ -537,11 +652,11 @@ th:last-child {
     --sap-table-wrapper-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
   }
 
-  body::after {
+  :root:not([data-theme]) body::after {
     opacity: 0.35;
   }
 
-  .tab-nav {
+  :root:not([data-theme]) .tab-nav {
     box-shadow: none;
   }
 }
