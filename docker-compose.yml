@@ -16,7 +16,7 @@ services:
       TZ: ${TZ:-UTC}
       STOCKWORKS_DATA_DIR: ${STOCKWORKS_DATA_DIR:-/data}
       STOCKWORKS_DB_FILENAME: ${STOCKWORKS_DB_FILENAME:-app.db}
-      DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@localhost:5432/makerworks?schema=orderworks}
+      DATABASE_URL: ${DATABASE_URL:-}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme}
       SECRET_KEY: ${SECRET_KEY:-please-change-me}

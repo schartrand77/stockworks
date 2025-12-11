@@ -20,7 +20,7 @@
   <Config Name="PGID" Target="PGID" Default="100" Description="Group ID that owns files written inside the container" Type="Variable" Display="advanced" Required="true" Mask="false" />
   <Config Name="UMASK" Target="UMASK" Default="002" Description="File creation mask applied before StockWorks starts" Type="Variable" Display="advanced" Required="false" Mask="false" />
   <Config Name="Timezone" Target="TZ" Default="UTC" Description="Timezone used for logs" Type="Variable" Display="always" Required="true" Mask="false" />
-  <Config Name="Database URL" Target="DATABASE_URL" Default="postgresql://postgres:postgres@localhost:5432/makerworks?schema=orderworks" Description="Optional PostgreSQL DSN shared with MakerWorks/OrderWorks" Type="Variable" Display="always" Required="false" Mask="true" />
+  <Config Name="Database URL" Target="DATABASE_URL" Default="" Description="Optional PostgreSQL DSN shared with MakerWorks/OrderWorks (leave blank for SQLite)" Type="Variable" Display="always" Required="false" Mask="true" />
   <Config Name="Data Directory" Target="STOCKWORKS_DATA_DIR" Default="/data" Description="Location inside the container that holds the SQLite file" Type="Variable" Display="advanced" Required="true" Mask="false" />
   <Config Name="Database Filename" Target="STOCKWORKS_DB_FILENAME" Default="app.db" Description="SQLite filename stored under STOCKWORKS_DATA_DIR" Type="Variable" Display="advanced" Required="true" Mask="false" />
   <Config Name="Admin Username" Target="ADMIN_USERNAME" Default="admin" Description="Credential required to log into the StockWorks UI" Type="Variable" Display="always" Required="true" Mask="false" />

@@ -34,12 +34,12 @@ The compose file builds the image, maps port `8000`, and mounts `stockworks/data
 
 ### Manual Docker build/run
 ```bash
-docker build -t stockworks ./stockworks
+docker build -t stockworks .
 docker run \
   -p 8000:8000 \
   -e PUID=$(id -u) \
   -e PGID=$(id -g) \
-  -v $(pwd)/stockworks/data:/data \
+  -v $(pwd)/data:/data \
   stockworks
 ```
 
@@ -51,7 +51,7 @@ The container understands the following environment settings:
 - `TZ` - Timezone string such as `UTC`, `America/New_York`, etc. Used for log timestamps.
 - `STOCKWORKS_DATA_DIR` - Directory inside the container for SQLite storage. Defaults to `/data` in Docker (and `./data` when running natively).
 - `STOCKWORKS_DB_FILENAME` - Name of the SQLite file within the data directory (default `app.db`).
-- `DATABASE_URL` - Optional override if you want to use PostgreSQL/MySQL instead of SQLite. When omitted we build `sqlite:///<STOCKWORKS_DATA_DIR>/<STOCKWORKS_DB_FILENAME>`.
+- `DATABASE_URL` - Optional override if you want to use PostgreSQL/MySQL instead of SQLite. When omitted we build `sqlite:///<STOCKWORKS_DATA_DIR>/<STOCKWORKS_DB_FILENAME>`. If you run StockWorks inside Docker, use a hostname that is reachable from the container (for example the Compose service name or `host.docker.internal`), not `localhost`.
 - `ORDERWORKS_BASE_URL` - Optional base URL used for "Open" links in the Orders tab. Leave blank if you do not need shortcuts back to OrderWorks.
 - `ORDERWORKS_ADMIN_USERNAME`, `ORDERWORKS_ADMIN_PASSWORD` - Only required when StockWorks cannot read jobs directly from the MakerWorks database and must call the OrderWorks HTTP API.
 
