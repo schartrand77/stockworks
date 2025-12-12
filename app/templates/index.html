@@ -14,8 +14,8 @@
     <meta name="apple-touch-fullscreen" content="yes" />
     <title>StockWorks Inventory</title>
     <link rel="stylesheet" href="/static/styles.css" />
-    <link rel="manifest" href="/static/site.webmanifest" />
-    <link rel="icon" type="image/png" href="/public/favicon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="1024x1024" href="/public/favicon.png" />
     <link rel="apple-touch-icon" sizes="1024x1024" href="/public/favicon.png" />
   </head>
   <body>
@@ -26,6 +26,7 @@
         <p>Manage filament materials, inventory, stock movements, and pricing.</p>
       </div>
       <div class="header-actions">
+        <button id="install-app" type="button" hidden>Install app</button>
         <button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false" aria-label="Switch theme">
           <span class="sr-only" data-theme-toggle-label>Switch to dark theme</span>
           <svg class="theme-icon theme-icon-sun" viewBox="0 0 24 24" aria-hidden="true" focusable="false">

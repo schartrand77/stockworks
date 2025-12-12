@@ -1,6 +1,7 @@
 """FastAPI application implementing inventory control for a 3D printing service."""
 from __future__ import annotations
 
+import mimetypes
 import os
 import secrets
 from datetime import datetime
@@ -9,7 +10,7 @@ from typing import List
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select
@@ -49,8 +50,13 @@ from .models import (
 )
 
 BASE_DIR = Path(__file__).resolve().parent
+STATIC_DIR = BASE_DIR / "static"
 PUBLIC_DIR = BASE_DIR.parent / "public"
+MANIFEST_FILE = STATIC_DIR / "site.webmanifest"
+SERVICE_WORKER_FILE = STATIC_DIR / "sw.js"
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+
+mimetypes.add_type("application/manifest+json", ".webmanifest")
 
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme")
@@ -74,9 +80,28 @@ app.add_middleware(
     session_cookie=SESSION_COOKIE,
     same_site="lax",
 )
-app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 if PUBLIC_DIR.exists():
     app.mount("/public", StaticFiles(directory=PUBLIC_DIR), name="public")
+
+
+def _static_file_response(path: Path, media_type: str) -> FileResponse:
+    if not path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"{path.name} not found")
+    return FileResponse(path, media_type=media_type)
+
+
+@app.get("/sw.js", include_in_schema=False)
+@app.get("/service-worker.js", include_in_schema=False)
+def service_worker() -> FileResponse:
+    """Serve the PWA service worker at the root scope."""
+    return _static_file_response(SERVICE_WORKER_FILE, media_type="application/javascript")
+
+
+@app.get("/manifest.webmanifest", include_in_schema=False)
+def web_manifest() -> FileResponse:
+    """Expose the web manifest at the root for install prompts."""
+    return _static_file_response(MANIFEST_FILE, media_type="application/manifest+json")
 
 
 @app.on_event("startup")

@@ -5,8 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="application-name" content="StockWorks" />
     <meta name="theme-color" content="#f4f6fb" />
-    <title>Sign in · StockWorks</title>
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="StockWorks" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <title>Sign in - StockWorks</title>
     <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="1024x1024" href="/public/favicon.png" />
+    <link rel="apple-touch-icon" sizes="1024x1024" href="/public/favicon.png" />
   </head>
   <body class="auth-body">
     <main class="auth-shell">
@@ -32,5 +39,12 @@
         </form>
       </section>
     </main>
+    <script>
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.register("/sw.js").catch((error) => {
+          console.error("Service worker registration (auth shell) failed:", error);
+        });
+      }
+    </script>
   </body>
 </html>

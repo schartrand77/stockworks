@@ -95,6 +95,7 @@ const hardwareMovementTableBody = document.querySelector("#hardware-movement-tab
 const orderworksTableBody = document.querySelector("#orderworks-table tbody");
 const orderworksRefreshBtn = document.getElementById("orderworks-refresh");
 const orderworksStatusEl = document.getElementById("orderworks-status");
+const installButton = document.getElementById("install-app");
 let themeToggleBtn = null;
 let themeToggleLabelEl = null;
 
@@ -102,6 +103,7 @@ const THEME_STORAGE_KEY = "stockworks-theme";
 const VALID_THEME_CHOICES = new Set(["light", "dark"]);
 const prefersDarkScheme = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
 let forcedThemeChoice = loadStoredThemeChoice();
+let deferredInstallPrompt = null;
 applyThemePreference(forcedThemeChoice);
 
 if (prefersDarkScheme) {
@@ -122,7 +124,20 @@ document.addEventListener("DOMContentLoaded", () => {
   initThemeToggle();
   initTabs();
   bindEvents();
+  registerServiceWorker();
   refreshAll();
+});
+
+window.addEventListener("beforeinstallprompt", (event) => {
+  event.preventDefault();
+  deferredInstallPrompt = event;
+  toggleInstallButton(true);
+});
+
+window.addEventListener("appinstalled", () => {
+  deferredInstallPrompt = null;
+  toggleInstallButton(false);
+  setMessage("StockWorks installed.", "success");
 });
 
 function bindEvents() {
@@ -184,6 +199,54 @@ function bindEvents() {
     }
   });
   hardwareMovementForm.addEventListener("submit", handleHardwareMovementSubmit);
+  if (installButton) {
+    installButton.addEventListener("click", handleInstallButtonClick);
+  }
+}
+
+function registerServiceWorker() {
+  if (!("serviceWorker" in navigator)) {
+    return;
+  }
+
+  navigator.serviceWorker
+    .register("/sw.js")
+    .then((registration) => {
+      console.info("Service worker registered:", registration.scope);
+    })
+    .catch((error) => {
+      console.error("Service worker registration failed:", error);
+    });
+}
+
+function toggleInstallButton(visible) {
+  if (!installButton) {
+    return;
+  }
+  installButton.hidden = !visible;
+}
+
+async function handleInstallButtonClick() {
+  if (!deferredInstallPrompt) {
+    setMessage("Install prompt not available yet.", "error");
+    return;
+  }
+
+  toggleInstallButton(false);
+  deferredInstallPrompt.prompt();
+  try {
+    const choice = await deferredInstallPrompt.userChoice;
+    if (choice.outcome === "accepted") {
+      setMessage("Installation started. Look for StockWorks on your home screen.", "success");
+    } else {
+      setMessage("Install cancelled. You can install later from the browser menu.", "info");
+    }
+  } catch (error) {
+    console.error("Install prompt failed:", error);
+    setMessage("Unable to trigger install prompt.", "error");
+  } finally {
+    deferredInstallPrompt = null;
+  }
 }
 
 async function refreshAll() {
