@@ -81,8 +81,6 @@ app.add_middleware(
     same_site="lax",
 )
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
-if PUBLIC_DIR.exists():
-    app.mount("/public", StaticFiles(directory=PUBLIC_DIR), name="public")
 
 
 def _static_file_response(path: Path, media_type: str) -> FileResponse:
@@ -102,6 +100,16 @@ def service_worker() -> FileResponse:
 def web_manifest() -> FileResponse:
     """Expose the web manifest at the root for install prompts."""
     return _static_file_response(MANIFEST_FILE, media_type="application/manifest+json")
+
+
+@app.get("/public/{asset_path:path}", include_in_schema=False)
+def public_assets(asset_path: str) -> FileResponse:
+    """Serve files from the repository-level public directory, even when not mounted."""
+    target = PUBLIC_DIR / asset_path
+    if not target.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Public asset not found")
+    media_type, _ = mimetypes.guess_type(str(target))
+    return FileResponse(target, media_type=media_type or "application/octet-stream")
 
 
 @app.on_event("startup")

@@ -14,7 +14,7 @@ self.addEventListener("install", (event) => {
   event.waitUntil(
     caches
       .open(CACHE_NAME)
-      .then((cache) => cache.addAll(CORE_ASSETS))
+      .then(precacheCoreAssets)
       .then(() => self.skipWaiting()),
   );
 });
@@ -89,4 +89,14 @@ async function cacheFirst(request) {
     cache.put(request, response.clone());
   }
   return response;
+}
+
+async function precacheCoreAssets(cache) {
+  for (const asset of CORE_ASSETS) {
+    try {
+      await cache.add(asset);
+    } catch (error) {
+      console.warn(`[SW] Failed to precache ${asset}:`, error);
+    }
+  }
 }
