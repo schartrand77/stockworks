@@ -84,7 +84,7 @@ StockWorks follows the standard Unraid conventions (`/data`, `PUID`/`PGID`, `TZ`
 ## Add the web app to a mobile home screen
 The `/static/site.webmanifest` plus platform icons enable full-screen launches on mobile:
 
-- **Android/Chrome** – open `http://SERVER_IP:8000/`, tap the browser menu, and choose **Add to Home screen**. StockWorks installs as a standalone PWA with the magenta theme color.
+- **Android/Chrome** – open the site, tap the browser menu, and choose **Add to home screen**. For the full PWA install prompt on Chrome/Edge desktop (the “Install app” icon in the address bar), you must access StockWorks over `https://` (or `http://localhost`).
 - **iOS/Safari** – open the same URL, tap the share icon, pick **Add to Home Screen**, and confirm. iOS will use the bundled 180×180 touch icon and launches StockWorks without browser chrome.
 
 The manifest also advertises theme/background colors, so the splash screen matches the MakerWorks v2 palette on both platforms.

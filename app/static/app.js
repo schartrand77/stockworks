@@ -209,6 +209,11 @@ function registerServiceWorker() {
     return;
   }
 
+  if (!window.isSecureContext) {
+    console.warn("Service workers and PWA install prompts require HTTPS (or localhost).");
+    return;
+  }
+
   navigator.serviceWorker
     .register("/sw.js")
     .then((registration) => {

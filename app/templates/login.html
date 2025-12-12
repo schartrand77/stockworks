@@ -40,10 +40,12 @@
       </section>
     </main>
     <script>
-      if ("serviceWorker" in navigator) {
+      if ("serviceWorker" in navigator && window.isSecureContext) {
         navigator.serviceWorker.register("/sw.js").catch((error) => {
           console.error("Service worker registration (auth shell) failed:", error);
         });
+      } else if ("serviceWorker" in navigator) {
+        console.warn("Service workers and PWA install prompts require HTTPS (or localhost).");
       }
     </script>
   </body>
