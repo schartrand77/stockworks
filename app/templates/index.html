@@ -157,7 +157,10 @@
             </label>
             <label>
               Barcode / SKU
-              <input type="text" id="material-barcode" placeholder="UPC, EAN, SKU..." />
+              <div class="scan-field">
+                <input type="text" id="material-barcode" placeholder="UPC, EAN, SKU..." />
+                <button type="button" id="material-barcode-scan" class="scan-button">Scan</button>
+              </div>
             </label>
             <label class="full-width">
               Notes
@@ -207,9 +210,12 @@
             <input type="hidden" id="inventory-id" />
             <label>
               Material
-              <select id="inventory-material" required>
-                <option value="">Select material...</option>
-              </select>
+              <div class="scan-field">
+                <select id="inventory-material" required>
+                  <option value="">Select material...</option>
+                </select>
+                <button type="button" id="inventory-material-scan" class="scan-button">Scan</button>
+              </div>
             </label>
             <label>
               Location
@@ -475,6 +481,20 @@
         </section>
       </div>
     </main>
+
+    <div id="barcode-scanner" class="scanner-overlay" hidden>
+      <div class="scanner-panel" role="dialog" aria-modal="true" aria-labelledby="scanner-title">
+        <div class="scanner-header">
+          <h3 id="scanner-title">Scan barcode</h3>
+          <button id="scanner-close" type="button" class="scan-button">Close</button>
+        </div>
+        <div class="scanner-viewport">
+          <video id="scanner-video" class="scanner-video" playsinline></video>
+          <div class="scanner-reticle" aria-hidden="true"></div>
+        </div>
+        <p id="scanner-status" class="muted">Point the camera at a barcode.</p>
+      </div>
+    </div>
 
     <script type="module" src="/static/app.js"></script>
   </body>

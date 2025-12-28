@@ -38,6 +38,7 @@ const materialTableBody = document.querySelector("#materials-table tbody");
 const materialClearBtn = document.getElementById("material-clear");
 const materialRefreshBtn = document.getElementById("material-refresh");
 const materialDeleteBtn = document.getElementById("material-delete");
+const materialBarcodeScanBtn = document.getElementById("material-barcode-scan");
 
 // Inventory references
 const inventoryForm = document.getElementById("inventory-form");
@@ -54,6 +55,7 @@ const inventoryTableBody = document.querySelector("#inventory-table tbody");
 const inventoryClearBtn = document.getElementById("inventory-clear");
 const inventoryRefreshBtn = document.getElementById("inventory-refresh");
 const inventoryDeleteBtn = document.getElementById("inventory-delete");
+const inventoryMaterialScanBtn = document.getElementById("inventory-material-scan");
 
 // Hardware references
 const hardwareForm = document.getElementById("hardware-form");
@@ -98,6 +100,32 @@ const orderworksStatusEl = document.getElementById("orderworks-status");
 const installButton = document.getElementById("install-app");
 let themeToggleBtn = null;
 let themeToggleLabelEl = null;
+
+const scannerOverlay = document.getElementById("barcode-scanner");
+const scannerVideo = document.getElementById("scanner-video");
+const scannerCloseBtn = document.getElementById("scanner-close");
+const scannerTitleEl = document.getElementById("scanner-title");
+const scannerStatusEl = document.getElementById("scanner-status");
+
+const DEFAULT_BARCODE_FORMATS = [
+  "code_128",
+  "code_39",
+  "code_93",
+  "ean_13",
+  "ean_8",
+  "upc_a",
+  "upc_e",
+  "itf",
+  "qr_code",
+];
+
+const scannerState = {
+  active: false,
+  detector: null,
+  stream: null,
+  rafId: null,
+  onDetected: null,
+};
 
 const THEME_STORAGE_KEY = "stockworks-theme";
 const VALID_THEME_CHOICES = new Set(["light", "dark"]);
@@ -201,6 +229,46 @@ function bindEvents() {
   hardwareMovementForm.addEventListener("submit", handleHardwareMovementSubmit);
   if (installButton) {
     installButton.addEventListener("click", handleInstallButtonClick);
+  }
+  if (materialBarcodeScanBtn) {
+    materialBarcodeScanBtn.addEventListener("click", () => {
+      openBarcodeScanner({
+        title: "Scan material barcode",
+        onDetected: (value) => {
+          materialFields.barcode.value = value;
+          setMessage(`Scanned barcode: ${value}`, "success");
+        },
+      });
+    });
+  }
+  if (inventoryMaterialScanBtn) {
+    inventoryMaterialScanBtn.addEventListener("click", () => {
+      openBarcodeScanner({
+        title: "Scan material barcode",
+        onDetected: async (value) => {
+          if (!state.materials.length) {
+            await loadMaterials();
+          }
+          const material = findMaterialByBarcode(value);
+          if (!material) {
+            setMessage(`No material found for barcode ${value}.`, "error");
+            return;
+          }
+          inventoryFields.material_id.value = String(material.id);
+          setMessage(`Selected ${material.name} (${material.color}).`, "success");
+        },
+      });
+    });
+  }
+  if (scannerCloseBtn) {
+    scannerCloseBtn.addEventListener("click", () => closeBarcodeScanner());
+  }
+  if (scannerOverlay) {
+    scannerOverlay.addEventListener("click", (event) => {
+      if (event.target === scannerOverlay) {
+        closeBarcodeScanner();
+      }
+    });
   }
 }
 
@@ -973,6 +1041,145 @@ function setMessage(text, variant = "info") {
   messageEl.className = `message ${variant === "error" ? "error" : variant === "success" ? "success" : ""}`;
   if (!text) {
     setTimeout(() => (messageEl.textContent = ""), 2000);
+  }
+}
+
+function normalizeBarcode(value) {
+  return String(value || "").trim();
+}
+
+function findMaterialByBarcode(barcode) {
+  const normalized = normalizeBarcode(barcode);
+  if (!normalized) {
+    return null;
+  }
+  return state.materials.find((material) => normalizeBarcode(material.barcode) === normalized) || null;
+}
+
+async function openBarcodeScanner({ title, onDetected }) {
+  if (!scannerOverlay || !scannerVideo) {
+    setMessage("Scanner UI is not available on this page.", "error");
+    return;
+  }
+  if (scannerState.active) {
+    return;
+  }
+  if (!window.isSecureContext) {
+    setMessage("Camera access requires HTTPS (or localhost).", "error");
+    return;
+  }
+  if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function") {
+    setMessage("Camera access is not supported on this device.", "error");
+    return;
+  }
+  if (typeof BarcodeDetector !== "function" || typeof createImageBitmap !== "function") {
+    setMessage("Barcode scanning is not supported in this browser.", "error");
+    return;
+  }
+
+  let detector = null;
+  try {
+    detector = new BarcodeDetector({ formats: DEFAULT_BARCODE_FORMATS });
+  } catch (error) {
+    console.error("Barcode detector initialization failed:", error);
+    setMessage("Barcode detector is unavailable.", "error");
+    return;
+  }
+
+  scannerState.active = true;
+  scannerState.detector = detector;
+  scannerState.onDetected = onDetected;
+  if (scannerTitleEl) {
+    scannerTitleEl.textContent = title || "Scan barcode";
+  }
+  if (scannerStatusEl) {
+    scannerStatusEl.textContent = "Point the camera at a barcode.";
+  }
+  scannerOverlay.hidden = false;
+
+  try {
+    scannerState.stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: "environment" } },
+      audio: false,
+    });
+    scannerVideo.srcObject = scannerState.stream;
+    await scannerVideo.play();
+    startBarcodeScanLoop();
+  } catch (error) {
+    console.error("Camera access failed:", error);
+    setMessage("Unable to access the camera.", "error");
+    closeBarcodeScanner({ silent: true });
+  }
+}
+
+function startBarcodeScanLoop() {
+  if (!scannerState.active || !scannerState.detector || !scannerVideo) {
+    return;
+  }
+  let lastScan = 0;
+  const scan = async (now) => {
+    if (!scannerState.active || !scannerState.detector) {
+      return;
+    }
+    if (scannerVideo.readyState < 2) {
+      scannerState.rafId = requestAnimationFrame(scan);
+      return;
+    }
+    if (now - lastScan < 250) {
+      scannerState.rafId = requestAnimationFrame(scan);
+      return;
+    }
+    lastScan = now;
+    try {
+      const frame = await createImageBitmap(scannerVideo);
+      const barcodes = await scannerState.detector.detect(frame);
+      frame.close();
+      if (barcodes && barcodes.length) {
+        const value = barcodes[0].rawValue || "";
+        if (value) {
+          const handler = scannerState.onDetected;
+          closeBarcodeScanner({ silent: true });
+          if (handler) {
+            Promise.resolve(handler(value)).catch((error) => {
+              console.error("Barcode handler failed:", error);
+              setMessage("Unable to process the scanned barcode.", "error");
+            });
+          }
+          return;
+        }
+      }
+    } catch (error) {
+      console.error("Barcode scan failed:", error);
+    }
+    scannerState.rafId = requestAnimationFrame(scan);
+  };
+  scannerState.rafId = requestAnimationFrame(scan);
+}
+
+function closeBarcodeScanner({ silent = false } = {}) {
+  if (!scannerState.active && !scannerOverlay) {
+    return;
+  }
+  scannerState.active = false;
+  scannerState.onDetected = null;
+  if (scannerState.rafId) {
+    cancelAnimationFrame(scannerState.rafId);
+    scannerState.rafId = null;
+  }
+  if (scannerState.stream) {
+    scannerState.stream.getTracks().forEach((track) => track.stop());
+    scannerState.stream = null;
+  }
+  if (scannerVideo) {
+    scannerVideo.pause();
+    scannerVideo.srcObject = null;
+  }
+  if (scannerOverlay) {
+    scannerOverlay.hidden = true;
+  }
+  scannerState.detector = null;
+  if (!silent && scannerStatusEl) {
+    scannerStatusEl.textContent = "Scanner closed.";
   }
 }
 
