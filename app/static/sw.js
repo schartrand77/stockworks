@@ -1,4 +1,4 @@
-const CACHE_NAME = "stockworks-shell-v2";
+const CACHE_NAME = "stockworks-shell-v3";
 const CORE_ASSETS = [
   "/login",
   "/static/styles.css",
