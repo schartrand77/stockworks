@@ -607,6 +607,26 @@ button.danger:hover {
   box-shadow: var(--sap-table-wrapper-shadow);
 }
 
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 0.75rem;
+  font-size: 0.85rem;
+  color: var(--sap-text-muted);
+}
+
+.pagination-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pagination-page {
+  color: var(--sap-text);
+}
+
 table {
   width: 100%;
   border-collapse: collapse;

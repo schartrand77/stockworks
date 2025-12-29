@@ -57,6 +57,20 @@ const inventoryRefreshBtn = document.getElementById("inventory-refresh");
 const inventoryDeleteBtn = document.getElementById("inventory-delete");
 const inventoryMaterialScanBtn = document.getElementById("inventory-material-scan");
 
+// Pagination references
+const materialsPrevBtn = document.getElementById("materials-prev");
+const materialsNextBtn = document.getElementById("materials-next");
+const materialsPageEl = document.getElementById("materials-page");
+const materialsInfoEl = document.getElementById("materials-pagination-info");
+const inventoryPrevBtn = document.getElementById("inventory-prev");
+const inventoryNextBtn = document.getElementById("inventory-next");
+const inventoryPageEl = document.getElementById("inventory-page");
+const inventoryInfoEl = document.getElementById("inventory-pagination-info");
+const hardwarePrevBtn = document.getElementById("hardware-prev");
+const hardwareNextBtn = document.getElementById("hardware-next");
+const hardwarePageEl = document.getElementById("hardware-page");
+const hardwareInfoEl = document.getElementById("hardware-pagination-info");
+
 // Hardware references
 const hardwareForm = document.getElementById("hardware-form");
 const hardwareIdInput = document.getElementById("hardware-id");
@@ -106,6 +120,12 @@ const scannerVideo = document.getElementById("scanner-video");
 const scannerCloseBtn = document.getElementById("scanner-close");
 const scannerTitleEl = document.getElementById("scanner-title");
 const scannerStatusEl = document.getElementById("scanner-status");
+
+const paginationState = {
+  materials: { page: 1, perPage: 10 },
+  inventory: { page: 1, perPage: 10 },
+  hardware: { page: 1, perPage: 10 },
+};
 
 const DEFAULT_BARCODE_FORMATS = [
   "code_128",
@@ -283,6 +303,19 @@ function bindEvents() {
       }
     });
   }
+
+  if (materialsPrevBtn && materialsNextBtn) {
+    materialsPrevBtn.addEventListener("click", () => changePage("materials", -1));
+    materialsNextBtn.addEventListener("click", () => changePage("materials", 1));
+  }
+  if (inventoryPrevBtn && inventoryNextBtn) {
+    inventoryPrevBtn.addEventListener("click", () => changePage("inventory", -1));
+    inventoryNextBtn.addEventListener("click", () => changePage("inventory", 1));
+  }
+  if (hardwarePrevBtn && hardwareNextBtn) {
+    hardwarePrevBtn.addEventListener("click", () => changePage("hardware", -1));
+    hardwareNextBtn.addEventListener("click", () => changePage("hardware", 1));
+  }
 }
 
 function registerServiceWorker() {
@@ -429,11 +462,23 @@ async function loadMovements(itemId) {
 }
 
 function renderMaterials() {
+  const { items, total, startIndex, endIndex, maxPage } = paginate(state.materials, paginationState.materials);
+  updatePaginationControls({
+    total,
+    startIndex,
+    endIndex,
+    maxPage,
+    pageState: paginationState.materials,
+    infoEl: materialsInfoEl,
+    pageEl: materialsPageEl,
+    prevBtn: materialsPrevBtn,
+    nextBtn: materialsNextBtn,
+  });
   if (!state.materials.length) {
     materialTableBody.innerHTML = `<tr><td colspan="10" class="muted">No materials yet.</td></tr>`;
     return;
   }
-  materialTableBody.innerHTML = state.materials
+  materialTableBody.innerHTML = items
     .map(
       (material) => `
         <tr data-id="${material.id}">
@@ -456,11 +501,23 @@ function renderMaterials() {
 }
 
 function renderInventory() {
+  const { items, total, startIndex, endIndex, maxPage } = paginate(state.inventory, paginationState.inventory);
+  updatePaginationControls({
+    total,
+    startIndex,
+    endIndex,
+    maxPage,
+    pageState: paginationState.inventory,
+    infoEl: inventoryInfoEl,
+    pageEl: inventoryPageEl,
+    prevBtn: inventoryPrevBtn,
+    nextBtn: inventoryNextBtn,
+  });
   if (!state.inventory.length) {
     inventoryTableBody.innerHTML = `<tr><td colspan="7" class="muted">No inventory tracked yet.</td></tr>`;
     return;
   }
-  inventoryTableBody.innerHTML = state.inventory
+  inventoryTableBody.innerHTML = items
     .map((item) => {
       const materialLabel = item.material ? `${item.material.name} (${item.material.color})` : "Unknown";
       return `
@@ -481,11 +538,23 @@ function renderInventory() {
 }
 
 function renderHardware() {
+  const { items, total, startIndex, endIndex, maxPage } = paginate(state.hardware, paginationState.hardware);
+  updatePaginationControls({
+    total,
+    startIndex,
+    endIndex,
+    maxPage,
+    pageState: paginationState.hardware,
+    infoEl: hardwareInfoEl,
+    pageEl: hardwarePageEl,
+    prevBtn: hardwarePrevBtn,
+    nextBtn: hardwareNextBtn,
+  });
   if (!state.hardware.length) {
     hardwareTableBody.innerHTML = `<tr><td colspan="8" class="muted">No hardware recorded yet.</td></tr>`;
     return;
   }
-  hardwareTableBody.innerHTML = state.hardware
+  hardwareTableBody.innerHTML = items
     .map(
       (item) => `
         <tr data-id="${item.id}">
@@ -793,6 +862,14 @@ function startInventoryEdit(id) {
 }
 
 function highlightInventoryRow(id) {
+  const index = state.inventory.findIndex((item) => item.id === id);
+  if (index === -1) return;
+  const pageState = paginationState.inventory;
+  const targetPage = Math.floor(index / pageState.perPage) + 1;
+  if (targetPage !== pageState.page) {
+    pageState.page = targetPage;
+    renderInventory();
+  }
   const row = inventoryTableBody.querySelector(`tr[data-id="${id}"]`);
   if (!row) return;
   inventoryTableBody.querySelectorAll("tr.is-highlighted").forEach((el) => el.classList.remove("is-highlighted"));
@@ -1062,6 +1139,55 @@ function setMessage(text, variant = "info") {
   messageEl.className = `message ${variant === "error" ? "error" : variant === "success" ? "success" : ""}`;
   if (!text) {
     setTimeout(() => (messageEl.textContent = ""), 2000);
+  }
+}
+
+function paginate(items, pageState) {
+  const total = items.length;
+  const maxPage = Math.max(1, Math.ceil(total / pageState.perPage));
+  if (pageState.page > maxPage) {
+    pageState.page = maxPage;
+  } else if (pageState.page < 1) {
+    pageState.page = 1;
+  }
+  const startIndex = total ? (pageState.page - 1) * pageState.perPage : 0;
+  const endIndex = total ? Math.min(startIndex + pageState.perPage, total) : 0;
+  return {
+    items: total ? items.slice(startIndex, endIndex) : [],
+    total,
+    startIndex,
+    endIndex,
+    maxPage,
+  };
+}
+
+function updatePaginationControls({ total, startIndex, endIndex, maxPage, pageState, infoEl, pageEl, prevBtn, nextBtn }) {
+  if (infoEl) {
+    const startLabel = total ? startIndex + 1 : 0;
+    const endLabel = total ? endIndex : 0;
+    infoEl.textContent = `Showing ${startLabel}-${endLabel} of ${total}`;
+  }
+  if (pageEl) {
+    pageEl.textContent = `Page ${pageState.page} of ${maxPage}`;
+  }
+  if (prevBtn) {
+    prevBtn.disabled = pageState.page <= 1;
+  }
+  if (nextBtn) {
+    nextBtn.disabled = pageState.page >= maxPage;
+  }
+}
+
+function changePage(section, delta) {
+  const pageState = paginationState[section];
+  if (!pageState) return;
+  pageState.page += delta;
+  if (section === "materials") {
+    renderMaterials();
+  } else if (section === "inventory") {
+    renderInventory();
+  } else if (section === "hardware") {
+    renderHardware();
   }
 }
 
