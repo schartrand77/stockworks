@@ -246,16 +246,29 @@ function bindEvents() {
       openBarcodeScanner({
         title: "Scan material barcode",
         onDetected: async (value) => {
+          if (!state.inventory.length) {
+            await loadInventory();
+          }
           if (!state.materials.length) {
             await loadMaterials();
           }
+          const inventoryMatches = findInventoryByBarcode(value);
+          if (inventoryMatches.length) {
+            const match = inventoryMatches[0];
+            startInventoryEdit(match.id);
+            highlightInventoryRow(match.id);
+            const materialLabel = match.material ? `${match.material.name} (${match.material.color})` : `Item ${match.id}`;
+            const extra = inventoryMatches.length > 1 ? " Multiple matches found; showing the first." : "";
+            setMessage(`Loaded inventory for ${materialLabel}.${extra}`, "success");
+            return;
+          }
           const material = findMaterialByBarcode(value);
           if (!material) {
-            setMessage(`No material found for barcode ${value}.`, "error");
+            setMessage(`No inventory or material found for barcode ${value}.`, "error");
             return;
           }
           inventoryFields.material_id.value = String(material.id);
-          setMessage(`Selected ${material.name} (${material.color}).`, "success");
+          setMessage(`Material found for ${material.name} (${material.color}). No inventory entry yet.`, "info");
         },
       });
     });
@@ -779,6 +792,14 @@ function startInventoryEdit(id) {
   safeAsync(() => loadMovements(id));
 }
 
+function highlightInventoryRow(id) {
+  const row = inventoryTableBody.querySelector(`tr[data-id="${id}"]`);
+  if (!row) return;
+  inventoryTableBody.querySelectorAll("tr.is-highlighted").forEach((el) => el.classList.remove("is-highlighted"));
+  row.classList.add("is-highlighted");
+  row.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+}
+
 function startHardwareEdit(id) {
   const item = state.hardware.find((hardware) => hardware.id === id);
   if (!item) return;
@@ -1054,6 +1075,19 @@ function findMaterialByBarcode(barcode) {
     return null;
   }
   return state.materials.find((material) => normalizeBarcode(material.barcode) === normalized) || null;
+}
+
+function findInventoryByBarcode(barcode) {
+  const normalized = normalizeBarcode(barcode);
+  if (!normalized) {
+    return [];
+  }
+  return state.inventory.filter((item) => {
+    if (item.material && normalizeBarcode(item.material.barcode) === normalized) {
+      return true;
+    }
+    return normalizeBarcode(item.spool_serial) === normalized;
+  });
 }
 
 async function openBarcodeScanner({ title, onDetected }) {

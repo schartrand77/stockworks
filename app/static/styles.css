@@ -633,6 +633,10 @@ tbody tr:hover {
   background: var(--sap-surface-alt);
 }
 
+tbody tr.is-highlighted {
+  background: rgba(255, 199, 62, 0.22);
+}
+
 td:last-child,
 th:last-child {
   text-align: right;
