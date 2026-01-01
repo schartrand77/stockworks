@@ -329,6 +329,48 @@ label {
   gap: 0.4rem;
 }
 
+.color-field {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.color-field input[type="text"] {
+  flex: 1;
+  min-width: 0;
+}
+
+.color-field input[type="color"] {
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: var(--sap-radius-sm);
+  border: 1px solid var(--sap-border);
+  padding: 0.15rem;
+  background: var(--sap-surface);
+  cursor: pointer;
+}
+
+.color-dot {
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 50%;
+  border: 1px solid var(--sap-border-strong);
+  background: var(--swatch-color, transparent);
+  flex: 0 0 auto;
+}
+
+.color-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.color-chip .color-hex {
+  font-size: 0.8rem;
+  color: var(--sap-text-muted);
+}
+
 .scan-field {
   display: flex;
   align-items: center;

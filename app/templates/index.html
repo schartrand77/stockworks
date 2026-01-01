@@ -144,6 +144,14 @@
               <input type="text" id="material-color" required placeholder="Midnight Black" />
             </label>
             <label>
+              Color hex
+              <div class="color-field">
+                <span class="color-dot" id="material-color-dot" aria-hidden="true"></span>
+                <input type="text" id="material-color-hex" placeholder="#1A1A1A" />
+                <input type="color" id="material-color-picker" value="#1A1A1A" aria-label="Pick a color" />
+              </div>
+            </label>
+            <label>
               Supplier
               <input type="text" id="material-supplier" placeholder="Optional" />
             </label>
@@ -180,7 +188,7 @@
                   <th>Brand</th>
                   <th>Type</th>
                   <th>Category</th>
-                  <th>Color</th>
+                  <th>Color / Hex</th>
                   <th>Price/g</th>
                   <th>Spool (g)</th>
                   <th>Supplier</th>

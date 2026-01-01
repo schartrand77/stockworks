@@ -11,6 +11,7 @@ class MaterialBase(SQLModel):
     filament_type: str
     category: Optional[str] = Field(default=None, description="Finishes like basic, matte, silk, cf, etc.")
     color: str
+    color_hex: Optional[str] = Field(default=None, description="Hex code for UI color swatches")
     supplier: Optional[str] = None
     price_per_gram: float = Field(gt=0, description="Base material cost per gram")
     spool_weight_grams: int = Field(gt=0, description="Total grams per spool")
@@ -33,6 +34,7 @@ class MaterialUpdate(SQLModel):
     filament_type: Optional[str] = None
     category: Optional[str] = None
     color: Optional[str] = None
+    color_hex: Optional[str] = None
     supplier: Optional[str] = None
     price_per_gram: Optional[float] = Field(default=None, gt=0)
     spool_weight_grams: Optional[int] = Field(default=None, gt=0)

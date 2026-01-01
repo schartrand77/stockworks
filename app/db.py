@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator, Optional, Tuple
 
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import Session, SQLModel, create_engine, select
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -77,6 +77,7 @@ def init_db() -> None:
     _ensure_schema_exists()
     SQLModel.metadata.create_all(engine)
     _ensure_material_columns()
+    _backfill_material_color_hex()
 
 
 @contextmanager
@@ -98,20 +99,50 @@ def get_session() -> Iterator[Session]:
 
 
 def _ensure_material_columns() -> None:
-    """Add newly introduced columns to the materials table for existing SQLite deployments."""
-    backend = engine.url.get_backend_name()
-    if backend != "sqlite":
-        return
     desired_columns = {
         "category": "TEXT",
         "barcode": "TEXT",
+        "color_hex": "TEXT",
     }
+    backend = engine.url.get_backend_name()
     with engine.begin() as conn:
-        pragma_rows = conn.exec_driver_sql("PRAGMA table_info(material)").fetchall()
-        existing_columns = {row[1] for row in pragma_rows}
-        for column, ddl in desired_columns.items():
-            if column not in existing_columns:
-                conn.exec_driver_sql(f"ALTER TABLE material ADD COLUMN {column} {ddl}")
+        if backend == "sqlite":
+            pragma_rows = conn.exec_driver_sql("PRAGMA table_info(material)").fetchall()
+            existing_columns = {row[1] for row in pragma_rows}
+            for column, ddl in desired_columns.items():
+                if column not in existing_columns:
+                    conn.exec_driver_sql(f"ALTER TABLE material ADD COLUMN {column} {ddl}")
+            return
+        if backend.startswith("postgres"):
+            schema = (DB_SCHEMA or "public").strip() or "public"
+            rows = conn.exec_driver_sql(
+                "SELECT column_name FROM information_schema.columns WHERE table_schema = %s AND table_name = %s",
+                (schema, "material"),
+            ).fetchall()
+            existing_columns = {row[0] for row in rows}
+            quoted_schema = engine.dialect.identifier_preparer.quote(schema)
+            table_name = f"{quoted_schema}.material"
+            for column, ddl in desired_columns.items():
+                if column not in existing_columns:
+                    conn.exec_driver_sql(f"ALTER TABLE {table_name} ADD COLUMN {column} {ddl}")
+
+
+def _backfill_material_color_hex() -> None:
+    """Normalize stored color hex values and fill Bambu Lab colors when possible."""
+    from .color_resolver import resolve_material_color_hex
+    from .models import Material
+
+    with Session(engine) as session:
+        materials = session.exec(select(Material)).all()
+        updated = False
+        for material in materials:
+            resolved = resolve_material_color_hex(material.brand, material.color, material.color_hex)
+            if resolved and resolved != material.color_hex:
+                material.color_hex = resolved
+                session.add(material)
+                updated = True
+        if updated:
+            session.commit()
 
 
 def _ensure_schema_exists() -> None:

@@ -16,6 +16,7 @@ from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select
 from starlette.middleware.sessions import SessionMiddleware
 
+from .color_resolver import resolve_material_color_hex
 from .db import get_session, init_db
 from .orderworks import (
     OrderWorksAuthenticationError,
@@ -169,7 +170,9 @@ def create_material(
     session: Session = Depends(get_session),
     _: bool = Depends(require_auth),
 ):
-    material = Material.from_orm(payload)
+    data = payload.dict()
+    data["color_hex"] = resolve_material_color_hex(data.get("brand"), data.get("color"), data.get("color_hex"))
+    material = Material(**data)
     session.add(material)
     session.commit()
     session.refresh(material)
@@ -201,6 +204,11 @@ def update_material(
     if not material:
         raise HTTPException(status_code=404, detail="Material not found")
     update_data = payload.dict(exclude_unset=True)
+    if {"brand", "color", "color_hex"} & update_data.keys():
+        brand = update_data.get("brand", material.brand)
+        color = update_data.get("color", material.color)
+        color_hex = update_data.get("color_hex", material.color_hex)
+        update_data["color_hex"] = resolve_material_color_hex(brand, color, color_hex)
     for key, value in update_data.items():
         setattr(material, key, value)
     session.add(material)

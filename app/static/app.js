@@ -27,6 +27,7 @@ const materialFields = {
   filament_type: document.getElementById("material-type"),
   category: document.getElementById("material-category"),
   color: document.getElementById("material-color"),
+  color_hex: document.getElementById("material-color-hex"),
   supplier: document.getElementById("material-supplier"),
   brand: document.getElementById("material-brand"),
   price_per_gram: document.getElementById("material-price"),
@@ -34,6 +35,8 @@ const materialFields = {
   barcode: document.getElementById("material-barcode"),
   notes: document.getElementById("material-notes"),
 };
+const materialColorDot = document.getElementById("material-color-dot");
+const materialColorPicker = document.getElementById("material-color-picker");
 const materialTableBody = document.querySelector("#materials-table tbody");
 const materialClearBtn = document.getElementById("material-clear");
 const materialRefreshBtn = document.getElementById("material-refresh");
@@ -147,6 +150,8 @@ const scannerState = {
   onDetected: null,
 };
 
+const BAMBU_BRANDS = new Set(["bambu lab", "bambu", "bambulab"]);
+
 const THEME_STORAGE_KEY = "stockworks-theme";
 const VALID_THEME_CHOICES = new Set(["light", "dark"]);
 const prefersDarkScheme = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
@@ -172,6 +177,8 @@ document.addEventListener("DOMContentLoaded", () => {
   initThemeToggle();
   initTabs();
   bindEvents();
+  updateMaterialColorRequirement();
+  syncMaterialColorInputs({ source: "text" });
   registerServiceWorker();
   refreshAll();
 });
@@ -187,6 +194,62 @@ window.addEventListener("appinstalled", () => {
   toggleInstallButton(false);
   setMessage("StockWorks installed.", "success");
 });
+
+function normalizeHexValue(value) {
+  if (!value) return "";
+  let hex = String(value).trim();
+  if (hex.toLowerCase().startsWith("0x")) {
+    hex = hex.slice(2);
+  }
+  if (hex.startsWith("#")) {
+    hex = hex.slice(1);
+  }
+  if (hex.length === 3) {
+    hex = hex
+      .split("")
+      .map((char) => char + char)
+      .join("");
+  }
+  if (!/^[0-9a-fA-F]{6}$/.test(hex)) {
+    return "";
+  }
+  return `#${hex.toUpperCase()}`;
+}
+
+function isBambuBrand(value) {
+  if (!value) return false;
+  return BAMBU_BRANDS.has(String(value).trim().toLowerCase());
+}
+
+function updateMaterialColorRequirement() {
+  if (!materialFields.color_hex) return;
+  const isBambu = isBambuBrand(materialFields.brand.value);
+  materialFields.color_hex.required = !isBambu;
+  if (isBambu && !materialFields.color_hex.value) {
+    materialFields.color_hex.placeholder = "Auto from Bambu catalog";
+  } else {
+    materialFields.color_hex.placeholder = "#1A1A1A";
+  }
+}
+
+function updateMaterialColorPreview(nextHex) {
+  if (!materialColorDot) return;
+  const hexValue = normalizeHexValue(nextHex);
+  materialColorDot.style.setProperty("--swatch-color", hexValue || "transparent");
+}
+
+function syncMaterialColorInputs({ source } = {}) {
+  if (!materialFields.color_hex || !materialColorPicker) return;
+  if (source === "picker") {
+    materialFields.color_hex.value = materialColorPicker.value.toUpperCase();
+  } else if (source === "text") {
+    const normalized = normalizeHexValue(materialFields.color_hex.value);
+    if (normalized) {
+      materialColorPicker.value = normalized;
+    }
+  }
+  updateMaterialColorPreview(materialFields.color_hex.value);
+}
 
 function bindEvents() {
   refreshAllBtn.addEventListener("click", refreshAll);
@@ -224,6 +287,15 @@ function bindEvents() {
   materialForm.addEventListener("submit", handleMaterialSubmit);
   inventoryForm.addEventListener("submit", handleInventorySubmit);
   hardwareForm.addEventListener("submit", handleHardwareSubmit);
+  if (materialFields.brand) {
+    materialFields.brand.addEventListener("input", updateMaterialColorRequirement);
+  }
+  if (materialFields.color_hex) {
+    materialFields.color_hex.addEventListener("input", () => syncMaterialColorInputs({ source: "text" }));
+  }
+  if (materialColorPicker) {
+    materialColorPicker.addEventListener("input", () => syncMaterialColorInputs({ source: "picker" }));
+  }
   materialTableBody.addEventListener("click", handleMaterialRowClick);
   inventoryTableBody.addEventListener("click", handleInventoryRowClick);
   hardwareTableBody.addEventListener("click", handleHardwareRowClick);
@@ -277,7 +349,10 @@ function bindEvents() {
             const match = inventoryMatches[0];
             startInventoryEdit(match.id);
             highlightInventoryRow(match.id);
-            const materialLabel = match.material ? `${match.material.name} (${match.material.color})` : `Item ${match.id}`;
+            const hexLabel = normalizeHexValue(match.material?.color_hex);
+            const materialLabel = match.material
+              ? `${match.material.name} (${match.material.color}${hexLabel ? ` • ${hexLabel}` : ""})`
+              : `Item ${match.id}`;
             const extra = inventoryMatches.length > 1 ? " Multiple matches found; showing the first." : "";
             setMessage(`Loaded inventory for ${materialLabel}.${extra}`, "success");
             return;
@@ -288,7 +363,9 @@ function bindEvents() {
             return;
           }
           inventoryFields.material_id.value = String(material.id);
-          setMessage(`Material found for ${material.name} (${material.color}). No inventory entry yet.`, "info");
+          const hexLabel = normalizeHexValue(material.color_hex);
+          const materialLabel = `${material.name} (${material.color}${hexLabel ? ` • ${hexLabel}` : ""})`;
+          setMessage(`Material found for ${materialLabel}. No inventory entry yet.`, "info");
         },
       });
     });
@@ -461,6 +538,21 @@ async function loadMovements(itemId) {
   renderMovements(results);
 }
 
+function formatColorChip(colorName, colorHex) {
+  const hex = normalizeHexValue(colorHex);
+  const nameLabel = colorName ? escapeHtml(colorName) : `<span class="muted">Unknown</span>`;
+  const hexLabel = hex ? `<span class="color-hex">${hex}</span>` : `<span class="color-hex muted">No hex</span>`;
+  const dot = `<span class="color-dot" style="--swatch-color: ${hex || "transparent"}" aria-hidden="true"></span>`;
+  return `<span class="color-chip">${dot}<span>${nameLabel}</span>${hexLabel}</span>`;
+}
+
+function formatMaterialLabel(material) {
+  if (!material) return "Unknown";
+  const name = escapeHtml(material.name);
+  const colorChip = formatColorChip(material.color, material.color_hex);
+  return `<span>${name}</span> ${colorChip}`;
+}
+
 function renderMaterials() {
   const { items, total, startIndex, endIndex, maxPage } = paginate(state.materials, paginationState.materials);
   updatePaginationControls({
@@ -486,7 +578,7 @@ function renderMaterials() {
           <td>${escapeHtml(material.brand || "")}</td>
           <td>${escapeHtml(material.filament_type)}</td>
           <td>${escapeHtml(material.category || "")}</td>
-          <td>${escapeHtml(material.color)}</td>
+          <td>${formatColorChip(material.color, material.color_hex)}</td>
           <td>$${material.price_per_gram.toFixed(2)}</td>
           <td>${material.spool_weight_grams}</td>
           <td>${escapeHtml(material.supplier || "")}</td>
@@ -519,10 +611,10 @@ function renderInventory() {
   }
   inventoryTableBody.innerHTML = items
     .map((item) => {
-      const materialLabel = item.material ? `${item.material.name} (${item.material.color})` : "Unknown";
+      const materialLabel = formatMaterialLabel(item.material);
       return `
         <tr data-id="${item.id}">
-          <td>${escapeHtml(materialLabel)}</td>
+          <td>${materialLabel}</td>
           <td>${escapeHtml(item.location)}</td>
           <td>${Number(item.quantity_grams).toFixed(2)}</td>
           <td>${Number(item.reorder_level).toFixed(2)}</td>
@@ -663,7 +755,11 @@ function renderMovements(movements) {
 
 function populateMaterialOptions() {
   const options = state.materials
-    .map((material) => `<option value="${material.id}">${escapeHtml(material.name)} (${escapeHtml(material.color)})</option>`)
+    .map((material) => {
+      const hex = normalizeHexValue(material.color_hex);
+      const hexLabel = hex ? ` • ${hex}` : "";
+      return `<option value="${material.id}">${escapeHtml(material.name)} (${escapeHtml(material.color)}${hexLabel})</option>`;
+    })
     .join("");
   const select = document.getElementById("inventory-material");
   const currentValue = select.value;
@@ -676,7 +772,12 @@ function populateMaterialOptions() {
 function populateInventoryOptions() {
   const options = state.inventory
     .map((item) => {
-      const label = item.material ? `${item.material.name} – ${item.location}` : `Item ${item.id}`;
+      if (!item.material) {
+        return `<option value="${item.id}">Item ${item.id}</option>`;
+      }
+      const hex = normalizeHexValue(item.material.color_hex);
+      const hexLabel = hex ? ` • ${hex}` : "";
+      const label = `${item.material.name} (${item.material.color}${hexLabel}) – ${item.location}`;
       return `<option value="${item.id}">${escapeHtml(label)}</option>`;
     })
     .join("");
@@ -837,12 +938,17 @@ function startMaterialEdit(id) {
   materialFields.filament_type.value = material.filament_type;
   materialFields.category.value = material.category || "";
   materialFields.color.value = material.color;
+  if (materialFields.color_hex) {
+    materialFields.color_hex.value = normalizeHexValue(material.color_hex) || "";
+  }
   materialFields.supplier.value = material.supplier || "";
   materialFields.brand.value = material.brand || "";
   materialFields.price_per_gram.value = material.price_per_gram;
   materialFields.spool_weight_grams.value = material.spool_weight_grams;
   materialFields.barcode.value = material.barcode || "";
   materialFields.notes.value = material.notes || "";
+  updateMaterialColorRequirement();
+  syncMaterialColorInputs({ source: "text" });
 }
 
 function startInventoryEdit(id) {
@@ -954,6 +1060,12 @@ function buildMaterialPayload() {
     setMessage("Fill in all required material fields.", "error");
     return null;
   }
+  const isBambu = isBambuBrand(materialFields.brand.value);
+  const normalizedHex = normalizeHexValue(materialFields.color_hex ? materialFields.color_hex.value : "");
+  if (!normalizedHex && !isBambu) {
+    setMessage("Provide a valid hex color for the material.", "error");
+    return null;
+  }
   const price = Number(materialFields.price_per_gram.value);
   const spool = Number(materialFields.spool_weight_grams.value);
   if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(spool) || spool <= 0) {
@@ -965,6 +1077,7 @@ function buildMaterialPayload() {
     filament_type: materialFields.filament_type.value.trim(),
     category: optionalString(materialFields.category.value),
     color: materialFields.color.value.trim(),
+    color_hex: normalizedHex || null,
     supplier: optionalString(materialFields.supplier.value),
     brand: optionalString(materialFields.brand.value),
     price_per_gram: price,
@@ -1055,6 +1168,8 @@ function resetMaterialForm() {
   materialForm.reset();
   materialIdInput.value = "";
   state.currentMaterialId = null;
+  updateMaterialColorRequirement();
+  syncMaterialColorInputs({ source: "text" });
 }
 
 function resetInventoryForm() {
