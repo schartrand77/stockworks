@@ -128,16 +128,10 @@ def _ensure_material_columns() -> None:
             return
         if backend.startswith("postgres"):
             schema = (DB_SCHEMA or "public").strip() or "public"
-            rows = conn.exec_driver_sql(
-                "SELECT column_name FROM information_schema.columns WHERE table_schema = %s AND table_name = %s",
-                (schema, "material"),
-            ).fetchall()
-            existing_columns = {row[0] for row in rows}
             quoted_schema = engine.dialect.identifier_preparer.quote(schema)
             table_name = f"{quoted_schema}.material"
             for column, ddl in desired_columns.items():
-                if column not in existing_columns:
-                    conn.exec_driver_sql(f"ALTER TABLE {table_name} ADD COLUMN {column} {ddl}")
+                conn.exec_driver_sql(f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS {column} {ddl}")
 
 
 def _backfill_material_color_hex() -> None:
