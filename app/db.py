@@ -10,6 +10,7 @@ from sqlmodel import Session, SQLModel, create_engine
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DB_SCHEMA: Optional[str] = None
 
 
 def _resolve_data_dir() -> Path:
@@ -56,8 +57,10 @@ def _strip_schema_parameter(database_url: str) -> Tuple[str, Optional[str]]:
 
 
 def create_db_engine():
+    global DB_SCHEMA
     database_url = _build_database_url()
     database_url, schema = _strip_schema_parameter(database_url)
+    DB_SCHEMA = schema
     connect_args = {"check_same_thread": False} if database_url.startswith("sqlite") else {}
     if schema and not database_url.startswith("sqlite"):
         schema_option = f"-c search_path={schema}"
@@ -71,6 +74,7 @@ engine = create_db_engine()
 
 def init_db() -> None:
     """Create database tables if they don't exist yet and ensure schema patches are applied."""
+    _ensure_schema_exists()
     SQLModel.metadata.create_all(engine)
     _ensure_material_columns()
 
@@ -108,3 +112,16 @@ def _ensure_material_columns() -> None:
         for column, ddl in desired_columns.items():
             if column not in existing_columns:
                 conn.exec_driver_sql(f"ALTER TABLE material ADD COLUMN {column} {ddl}")
+
+
+def _ensure_schema_exists() -> None:
+    """Create the configured Postgres schema if it is missing."""
+    backend = engine.url.get_backend_name()
+    if backend == "sqlite" or not DB_SCHEMA:
+        return
+    schema = DB_SCHEMA.strip()
+    if not schema:
+        return
+    with engine.begin() as conn:
+        quoted_schema = engine.dialect.identifier_preparer.quote(schema)
+        conn.exec_driver_sql(f"CREATE SCHEMA IF NOT EXISTS {quoted_schema}")
