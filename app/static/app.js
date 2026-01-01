@@ -216,6 +216,24 @@ function normalizeHexValue(value) {
   return `#${hex.toUpperCase()}`;
 }
 
+function resolveSwatchColor(colorName, colorHex) {
+  const normalizedHex = normalizeHexValue(colorHex);
+  if (normalizedHex) {
+    return normalizedHex;
+  }
+  const nameHex = normalizeHexValue(colorName);
+  if (nameHex) {
+    return nameHex;
+  }
+  if (colorName && typeof CSS !== "undefined" && typeof CSS.supports === "function") {
+    const trimmed = String(colorName).trim();
+    if (trimmed && CSS.supports("color", trimmed)) {
+      return trimmed;
+    }
+  }
+  return "";
+}
+
 function isBambuBrand(value) {
   if (!value) return false;
   return BAMBU_BRANDS.has(String(value).trim().toLowerCase());
@@ -540,9 +558,10 @@ async function loadMovements(itemId) {
 
 function formatColorChip(colorName, colorHex) {
   const hex = normalizeHexValue(colorHex);
+  const swatchColor = resolveSwatchColor(colorName, colorHex);
   const nameLabel = colorName ? escapeHtml(colorName) : `<span class="muted">Unknown</span>`;
   const hexLabel = hex ? `<span class="color-hex">${hex}</span>` : `<span class="color-hex muted">No hex</span>`;
-  const dot = `<span class="color-dot" style="--swatch-color: ${hex || "transparent"}" aria-hidden="true"></span>`;
+  const dot = `<span class="color-dot" style="--swatch-color: ${swatchColor || "transparent"}" aria-hidden="true"></span>`;
   return `<span class="color-chip">${dot}<span>${nameLabel}</span>${hexLabel}</span>`;
 }
 

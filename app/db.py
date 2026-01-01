@@ -70,18 +70,30 @@ def create_db_engine():
 
 
 engine = create_db_engine()
+_DB_READY = False
 
 
 def init_db() -> None:
     """Create database tables if they don't exist yet and ensure schema patches are applied."""
+    global _DB_READY
     _ensure_schema_exists()
     SQLModel.metadata.create_all(engine)
     _ensure_material_columns()
     _backfill_material_color_hex()
+    _DB_READY = True
+
+
+def ensure_db_ready() -> None:
+    """Guarantee the database schema is initialized before handling requests."""
+    global _DB_READY
+    if _DB_READY:
+        return
+    init_db()
 
 
 @contextmanager
 def session_scope() -> Iterator[Session]:
+    ensure_db_ready()
     session = Session(engine)
     try:
         yield session
@@ -94,6 +106,7 @@ def session_scope() -> Iterator[Session]:
 
 
 def get_session() -> Iterator[Session]:
+    ensure_db_ready()
     with Session(engine) as session:
         yield session
 
