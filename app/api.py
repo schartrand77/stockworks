@@ -193,6 +193,21 @@ def get_material(material_id: int, session: Session = Depends(get_session), _: b
     return material
 
 
+@app.post("/materials/backfill-colors")
+def backfill_material_colors(session: Session = Depends(get_session), _: bool = Depends(require_auth)):
+    materials = session.exec(select(Material)).all()
+    updated = 0
+    for material in materials:
+        resolved = resolve_material_color_hex(material.brand, material.color, material.color_hex)
+        if resolved and resolved != material.color_hex:
+            material.color_hex = resolved
+            session.add(material)
+            updated += 1
+    if updated:
+        session.commit()
+    return {"updated": updated}
+
+
 @app.put("/materials/{material_id}", response_model=MaterialRead)
 def update_material(
     material_id: int,

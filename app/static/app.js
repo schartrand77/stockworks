@@ -40,6 +40,7 @@ const materialColorPicker = document.getElementById("material-color-picker");
 const materialTableBody = document.querySelector("#materials-table tbody");
 const materialClearBtn = document.getElementById("material-clear");
 const materialRefreshBtn = document.getElementById("material-refresh");
+const materialBackfillBtn = document.getElementById("material-backfill");
 const materialDeleteBtn = document.getElementById("material-delete");
 const materialBarcodeScanBtn = document.getElementById("material-barcode-scan");
 
@@ -272,6 +273,9 @@ function syncMaterialColorInputs({ source } = {}) {
 function bindEvents() {
   refreshAllBtn.addEventListener("click", refreshAll);
   materialRefreshBtn.addEventListener("click", () => safeAsync(loadMaterials));
+  if (materialBackfillBtn) {
+    materialBackfillBtn.addEventListener("click", () => safeAsync(backfillMaterialColors));
+  }
   inventoryRefreshBtn.addEventListener("click", () => safeAsync(loadInventory));
   hardwareRefreshBtn.addEventListener("click", () => safeAsync(loadHardware));
   if (orderworksRefreshBtn) {
@@ -486,6 +490,13 @@ async function loadMaterials() {
   if (state.currentMaterialId && !materials.some((m) => m.id === state.currentMaterialId)) {
     resetMaterialForm();
   }
+}
+
+async function backfillMaterialColors() {
+  const result = await api("/materials/backfill-colors", { method: "POST" });
+  await loadMaterials();
+  const updated = result && Number.isFinite(result.updated) ? result.updated : 0;
+  setMessage(updated ? `Updated ${updated} material colors.` : "No material colors to update.", "success");
 }
 
 async function loadInventory() {
