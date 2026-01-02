@@ -40,7 +40,6 @@ const materialColorPicker = document.getElementById("material-color-picker");
 const materialTableBody = document.querySelector("#materials-table tbody");
 const materialClearBtn = document.getElementById("material-clear");
 const materialRefreshBtn = document.getElementById("material-refresh");
-const materialBackfillBtn = document.getElementById("material-backfill");
 const materialDeleteBtn = document.getElementById("material-delete");
 const materialBarcodeScanBtn = document.getElementById("material-barcode-scan");
 
@@ -151,8 +150,6 @@ const scannerState = {
   onDetected: null,
 };
 
-const BAMBU_BRANDS = new Set(["bambu lab", "bambu", "bambulab"]);
-
 const THEME_STORAGE_KEY = "stockworks-theme";
 const VALID_THEME_CHOICES = new Set(["light", "dark"]);
 const prefersDarkScheme = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
@@ -235,20 +232,10 @@ function resolveSwatchColor(colorName, colorHex) {
   return "";
 }
 
-function isBambuBrand(value) {
-  if (!value) return false;
-  return BAMBU_BRANDS.has(String(value).trim().toLowerCase());
-}
-
 function updateMaterialColorRequirement() {
   if (!materialFields.color_hex) return;
-  const isBambu = isBambuBrand(materialFields.brand.value);
-  materialFields.color_hex.required = !isBambu;
-  if (isBambu && !materialFields.color_hex.value) {
-    materialFields.color_hex.placeholder = "Auto from Bambu catalog";
-  } else {
-    materialFields.color_hex.placeholder = "#1A1A1A";
-  }
+  materialFields.color_hex.required = true;
+  materialFields.color_hex.placeholder = "#1A1A1A";
 }
 
 function updateMaterialColorPreview(nextHex) {
@@ -273,9 +260,6 @@ function syncMaterialColorInputs({ source } = {}) {
 function bindEvents() {
   refreshAllBtn.addEventListener("click", refreshAll);
   materialRefreshBtn.addEventListener("click", () => safeAsync(loadMaterials));
-  if (materialBackfillBtn) {
-    materialBackfillBtn.addEventListener("click", () => safeAsync(backfillMaterialColors));
-  }
   inventoryRefreshBtn.addEventListener("click", () => safeAsync(loadInventory));
   hardwareRefreshBtn.addEventListener("click", () => safeAsync(loadHardware));
   if (orderworksRefreshBtn) {
@@ -309,9 +293,6 @@ function bindEvents() {
   materialForm.addEventListener("submit", handleMaterialSubmit);
   inventoryForm.addEventListener("submit", handleInventorySubmit);
   hardwareForm.addEventListener("submit", handleHardwareSubmit);
-  if (materialFields.brand) {
-    materialFields.brand.addEventListener("input", updateMaterialColorRequirement);
-  }
   if (materialFields.color_hex) {
     materialFields.color_hex.addEventListener("input", () => syncMaterialColorInputs({ source: "text" }));
   }
@@ -490,13 +471,6 @@ async function loadMaterials() {
   if (state.currentMaterialId && !materials.some((m) => m.id === state.currentMaterialId)) {
     resetMaterialForm();
   }
-}
-
-async function backfillMaterialColors() {
-  const result = await api("/materials/backfill-colors", { method: "POST" });
-  await loadMaterials();
-  const updated = result && Number.isFinite(result.updated) ? result.updated : 0;
-  setMessage(updated ? `Updated ${updated} material colors.` : "No material colors to update.", "success");
 }
 
 async function loadInventory() {
@@ -1090,9 +1064,8 @@ function buildMaterialPayload() {
     setMessage("Fill in all required material fields.", "error");
     return null;
   }
-  const isBambu = isBambuBrand(materialFields.brand.value);
   const normalizedHex = normalizeHexValue(materialFields.color_hex ? materialFields.color_hex.value : "");
-  if (!normalizedHex && !isBambu) {
+  if (!normalizedHex) {
     setMessage("Provide a valid hex color for the material.", "error");
     return null;
   }

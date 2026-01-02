@@ -79,7 +79,6 @@ def init_db() -> None:
     _ensure_schema_exists()
     SQLModel.metadata.create_all(engine)
     _ensure_material_columns()
-    _backfill_material_color_hex()
     _DB_READY = True
 
 
@@ -132,24 +131,6 @@ def _ensure_material_columns() -> None:
             table_name = f"{quoted_schema}.material"
             for column, ddl in desired_columns.items():
                 conn.exec_driver_sql(f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS {column} {ddl}")
-
-
-def _backfill_material_color_hex() -> None:
-    """Normalize stored color hex values and fill Bambu Lab colors when possible."""
-    from .color_resolver import resolve_material_color_hex
-    from .models import Material
-
-    with Session(engine) as session:
-        materials = session.exec(select(Material)).all()
-        updated = False
-        for material in materials:
-            resolved = resolve_material_color_hex(material.brand, material.color, material.color_hex)
-            if resolved and resolved != material.color_hex:
-                material.color_hex = resolved
-                session.add(material)
-                updated = True
-        if updated:
-            session.commit()
 
 
 def _ensure_schema_exists() -> None:
