@@ -42,6 +42,7 @@ const materialClearBtn = document.getElementById("material-clear");
 const materialRefreshBtn = document.getElementById("material-refresh");
 const materialDeleteBtn = document.getElementById("material-delete");
 const materialBarcodeScanBtn = document.getElementById("material-barcode-scan");
+const filamentTypeDatalist = document.getElementById("filament-type-list");
 
 // Inventory references
 const inventoryForm = document.getElementById("inventory-form");
@@ -177,6 +178,7 @@ document.addEventListener("DOMContentLoaded", () => {
   bindEvents();
   updateMaterialColorRequirement();
   syncMaterialColorInputs({ source: "text" });
+  safeAsync(loadFilamentTypes);
   registerServiceWorker();
   refreshAll();
 });
@@ -470,6 +472,19 @@ async function loadMaterials() {
   populateMaterialOptions();
   if (state.currentMaterialId && !materials.some((m) => m.id === state.currentMaterialId)) {
     resetMaterialForm();
+  }
+}
+
+async function loadFilamentTypes() {
+  if (!filamentTypeDatalist) {
+    return;
+  }
+  try {
+    const payload = await api("/filament-types/bambu-x1c");
+    const types = Array.isArray(payload?.filament_types) ? payload.filament_types : [];
+    filamentTypeDatalist.innerHTML = types.map((item) => `<option value="${escapeHtml(item)}"></option>`).join("");
+  } catch (error) {
+    console.warn("Unable to load Bambu filament types.", error);
   }
 }
 

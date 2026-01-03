@@ -8,7 +8,9 @@ from typing import Dict, List, Optional
 
 from sqlmodel import select
 
+from .color_resolver import normalize_hex
 from .db import init_db, session_scope
+from .filament_types import BAMBU_X1C_FILAMENT_TYPES
 from .models import InventoryItem, Material, StockMovement
 
 
@@ -24,6 +26,7 @@ class StockWorksApp(tk.Tk):
         self.material_cache: Dict[int, Material] = {}
         self.inventory_cache: Dict[int, InventoryItem] = {}
         self.material_choice_values: List[str] = []
+        self.swatch_cache: Dict[str, tk.PhotoImage] = {}
 
         self.material_comboboxes: List[ttk.Combobox] = []
 
@@ -56,7 +59,9 @@ class StockWorksApp(tk.Tk):
 
         # Material table
         columns = ("Name", "Filament", "Color", "Price/gram", "Spool (g)", "Supplier", "Brand")
-        self.material_tree = ttk.Treeview(tab, columns=columns, show="headings", height=14, selectmode="browse")
+        self.material_tree = ttk.Treeview(tab, columns=columns, show="tree headings", height=14, selectmode="browse")
+        self.material_tree.heading("#0", text="Swatch")
+        self.material_tree.column("#0", width=60, anchor="center", stretch=False)
         for col in columns:
             anchor = "w"
             width = 120 if col not in {"Price/gram", "Spool (g)"} else 90
@@ -88,7 +93,12 @@ class StockWorksApp(tk.Tk):
             ttk.Label(form_frame, text=label).grid(row=row, column=0, sticky="w", padx=6, pady=4)
             var = tk.StringVar()
             self.material_vars[field] = var
-            ttk.Entry(form_frame, textvariable=var).grid(row=row, column=1, sticky="ew", padx=6, pady=4)
+            if field == "filament_type":
+                combo = ttk.Combobox(form_frame, textvariable=var, values=BAMBU_X1C_FILAMENT_TYPES)
+                combo.grid(row=row, column=1, sticky="ew", padx=6, pady=4)
+                combo.configure(state="normal")
+            else:
+                ttk.Entry(form_frame, textvariable=var).grid(row=row, column=1, sticky="ew", padx=6, pady=4)
 
         ttk.Label(form_frame, text="Notes").grid(row=len(entry_fields), column=0, sticky="nw", padx=6, pady=6)
         self.material_notes = tk.Text(form_frame, height=4)
@@ -113,7 +123,9 @@ class StockWorksApp(tk.Tk):
         tab.columnconfigure(1, weight=2)
 
         columns = ("Material", "Location", "Qty (g)", "Reorder", "Spool serial", "Unit cost")
-        self.inventory_tree = ttk.Treeview(tab, columns=columns, show="headings", height=12)
+        self.inventory_tree = ttk.Treeview(tab, columns=columns, show="tree headings", height=12)
+        self.inventory_tree.heading("#0", text="Swatch")
+        self.inventory_tree.column("#0", width=60, anchor="center", stretch=False)
         for col in columns:
             anchor = "w"
             width = 140 if col in {"Material", "Location"} else 100
@@ -305,10 +317,12 @@ class StockWorksApp(tk.Tk):
             materials = session.exec(select(Material).order_by(Material.name)).all()
         self.material_cache = {m.id: m for m in materials if m.id is not None}
         for material in materials:
+            swatch = self._material_swatch(material)
             self.material_tree.insert(
                 "",
                 "end",
                 iid=str(material.id),
+                image=swatch,
                 values=(
                     material.name,
                     material.filament_type,
@@ -482,10 +496,12 @@ class StockWorksApp(tk.Tk):
         self.inventory_cache = {item.id: item for item in items if item.id is not None}
         for item in items:
             material_label = self._format_material_label(item.material)
+            swatch = self._material_swatch(item.material)
             self.inventory_tree.insert(
                 "",
                 "end",
                 iid=str(item.id),
+                image=swatch,
                 values=(
                     material_label,
                     item.location,
@@ -640,6 +656,19 @@ class StockWorksApp(tk.Tk):
             return int(token)
         except ValueError:
             return None
+
+    def _material_swatch(self, material: Optional[Material]) -> Optional[tk.PhotoImage]:
+        if not material:
+            return None
+        hex_value = normalize_hex(material.color_hex) or normalize_hex(material.color)
+        if not hex_value:
+            return None
+        if hex_value not in self.swatch_cache:
+            image = tk.PhotoImage(width=12, height=12)
+            image.put("#CBD5E1", to=(0, 0, 11, 11))
+            image.put(hex_value, to=(1, 1, 10, 10))
+            self.swatch_cache[hex_value] = image
+        return self.swatch_cache[hex_value]
 
     def run(self) -> None:
         self.mainloop()

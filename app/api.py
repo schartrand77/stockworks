@@ -18,6 +18,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from .color_resolver import normalize_hex
 from .db import get_session, init_db
+from .filament_types import bambu_x1c_filament_types
 from .orderworks import (
     OrderWorksAuthenticationError,
     OrderWorksDatabaseUnavailableError,
@@ -155,6 +156,11 @@ async def login(request: Request, username: str = Form(...), password: str = For
         return RedirectResponse("/", status_code=status.HTTP_303_SEE_OTHER)
     context = {"request": request, "error": "Invalid username or password.", "username": username}
     return templates.TemplateResponse("login.html", context, status_code=status.HTTP_401_UNAUTHORIZED)
+
+
+@app.get("/filament-types/bambu-x1c")
+def list_bambu_x1c_filament_types(_: bool = Depends(require_auth)) -> dict[str, list[str]]:
+    return {"filament_types": bambu_x1c_filament_types()}
 
 
 @app.post("/logout")
