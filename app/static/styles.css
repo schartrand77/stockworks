@@ -301,6 +301,128 @@ body::after {
   border-radius: 0 0 var(--sap-radius-lg) var(--sap-radius-lg);
 }
 
+.reports-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+}
+
+.report-block {
+  border: 1px solid var(--sap-border);
+  border-radius: var(--sap-radius-md);
+  background: var(--sap-surface);
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.report-block h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--sap-heading);
+}
+
+.report-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.75rem;
+}
+
+.report-metric {
+  padding: 0.75rem;
+  border-radius: var(--sap-radius-sm);
+  border: 1px solid var(--sap-border);
+  background: var(--sap-surface-alt);
+}
+
+.report-metric span {
+  display: block;
+}
+
+.report-metric .label {
+  font-size: 0.75rem;
+  color: var(--sap-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.report-metric .value {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--sap-heading);
+}
+
+.report-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.report-bar {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) 2fr auto;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.report-bar-label {
+  font-size: 0.85rem;
+  color: var(--sap-text);
+}
+
+.report-bar-track {
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--sap-surface-muted);
+  overflow: hidden;
+}
+
+.report-bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--sap-primary);
+  border-radius: 999px;
+}
+
+.report-bar-value {
+  font-size: 0.8rem;
+  color: var(--sap-text-muted);
+  text-align: right;
+}
+
+.report-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.report-list li {
+  border: 1px solid var(--sap-border);
+  border-radius: var(--sap-radius-sm);
+  background: var(--sap-surface-alt);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+}
+
+.report-list .report-alert {
+  border-color: rgba(198, 70, 58, 0.35);
+  color: var(--sap-danger);
+  background: var(--sap-danger-soft);
+}
+
+.report-callout {
+  border: 1px dashed var(--sap-border-strong);
+  border-radius: var(--sap-radius-sm);
+  background: var(--sap-surface-alt);
+  padding: 0.75rem;
+  color: var(--sap-text-muted);
+  font-size: 0.9rem;
+}
+
 .two-columns,
 .hardware-movements-grid {
   display: flex;

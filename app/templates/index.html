@@ -106,6 +106,17 @@
         >
           Orders
         </button>
+        <button
+          class="tab-button"
+          id="tab-reports"
+          type="button"
+          role="tab"
+          aria-selected="false"
+          aria-controls="reports-panel"
+          data-tab-target="reports-panel"
+        >
+          Reports
+        </button>
       </nav>
 
       <div class="tab-panels">
@@ -510,6 +521,40 @@
               <tbody></tbody>
             </table>
           </div>
+        </div>
+        </section>
+
+        <section class="card tab-panel" id="reports-panel" role="tabpanel" aria-labelledby="tab-reports" hidden>
+        <div class="card-header">
+          <div>
+            <h2>Reports</h2>
+            <p>Inventory, usage, and reorder insights.</p>
+          </div>
+          <div class="card-actions">
+            <button id="reports-refresh" type="button">Refresh reports</button>
+          </div>
+        </div>
+        <div class="card-body reports-grid" id="reports-body">
+          <section class="report-block">
+            <h3>Overview</h3>
+            <div class="report-metrics" id="report-metrics"></div>
+          </section>
+          <section class="report-block">
+            <h3>Inventory by material</h3>
+            <div class="report-bars" id="report-inventory-chart"></div>
+          </section>
+          <section class="report-block">
+            <h3>Low stock</h3>
+            <ul class="report-list" id="report-low-stock"></ul>
+          </section>
+          <section class="report-block">
+            <h3>Hardware by category</h3>
+            <div class="report-bars" id="report-hardware-chart"></div>
+          </section>
+          <section class="report-block">
+            <h3>Usage snapshot</h3>
+            <div class="report-callout" id="report-usage"></div>
+          </section>
         </div>
         </section>
       </div>

@@ -11,6 +11,8 @@ const state = {
   orderworksError: null,
   orderworksConfigured: true,
   orderworksBaseUrl: "",
+  lastInventoryMovements: [],
+  lastHardwareMovements: [],
 };
 
 const messageEl = document.getElementById("message");
@@ -115,6 +117,12 @@ const hardwareMovementTableBody = document.querySelector("#hardware-movement-tab
 const orderworksTableBody = document.querySelector("#orderworks-table tbody");
 const orderworksRefreshBtn = document.getElementById("orderworks-refresh");
 const orderworksStatusEl = document.getElementById("orderworks-status");
+const reportsRefreshBtn = document.getElementById("reports-refresh");
+const reportMetricsEl = document.getElementById("report-metrics");
+const reportInventoryChartEl = document.getElementById("report-inventory-chart");
+const reportLowStockEl = document.getElementById("report-low-stock");
+const reportHardwareChartEl = document.getElementById("report-hardware-chart");
+const reportUsageEl = document.getElementById("report-usage");
 const installButton = document.getElementById("install-app");
 let themeToggleBtn = null;
 let themeToggleLabelEl = null;
@@ -266,6 +274,9 @@ function bindEvents() {
   hardwareRefreshBtn.addEventListener("click", () => safeAsync(loadHardware));
   if (orderworksRefreshBtn) {
     orderworksRefreshBtn.addEventListener("click", () => safeAsync(loadOrderWorksJobs));
+  }
+  if (reportsRefreshBtn) {
+    reportsRefreshBtn.addEventListener("click", () => safeAsync(refreshReports));
   }
   materialClearBtn.addEventListener("click", resetMaterialForm);
   inventoryClearBtn.addEventListener("click", resetInventoryForm);
@@ -465,6 +476,12 @@ async function refreshAll() {
   }
 }
 
+async function refreshReports() {
+  await Promise.all([loadMaterials(), loadInventory(), loadHardware()]);
+  renderReports();
+  setMessage("Reports updated.", "success");
+}
+
 async function loadMaterials() {
   const materials = await api("/materials");
   state.materials = materials;
@@ -473,6 +490,7 @@ async function loadMaterials() {
   if (state.currentMaterialId && !materials.some((m) => m.id === state.currentMaterialId)) {
     resetMaterialForm();
   }
+  renderReports();
 }
 
 async function loadFilamentTypes() {
@@ -506,6 +524,7 @@ async function loadInventory() {
       renderMovements([]);
     }
   }
+  renderReports();
 }
 
 async function loadHardware() {
@@ -526,6 +545,7 @@ async function loadHardware() {
       renderHardwareMovements([]);
     }
   }
+  renderReports();
 }
 
 async function loadOrderWorksJobs({ silent = false } = {}) {
@@ -553,7 +573,9 @@ async function loadOrderWorksJobs({ silent = false } = {}) {
 
 async function loadMovements(itemId) {
   const results = await api(`/inventory/${itemId}/movements`);
+  state.lastInventoryMovements = Array.isArray(results) ? results : [];
   renderMovements(results);
+  renderReports();
 }
 
 function formatColorChip(colorName, colorHex) {
@@ -683,6 +705,206 @@ function renderHardware() {
         </tr>`
     )
     .join("");
+}
+
+function renderReports() {
+  if (!reportMetricsEl || !reportInventoryChartEl || !reportLowStockEl || !reportHardwareChartEl || !reportUsageEl) {
+    return;
+  }
+  const materials = Array.isArray(state.materials) ? state.materials : [];
+  const inventory = Array.isArray(state.inventory) ? state.inventory : [];
+  const hardware = Array.isArray(state.hardware) ? state.hardware : [];
+
+  const totalInventoryGrams = inventory.reduce((sum, item) => sum + Number(item.quantity_grams || 0), 0);
+  const totalInventoryValue = inventory.reduce((sum, item) => {
+    const qty = Number(item.quantity_grams || 0);
+    const price = Number(item.material?.price_per_gram || 0);
+    if (!Number.isFinite(qty) || !Number.isFinite(price)) {
+      return sum;
+    }
+    return sum + qty * price;
+  }, 0);
+  const totalHardwareUnits = hardware.reduce((sum, item) => sum + Number(item.quantity_on_hand || 0), 0);
+
+  const inventoryAlerts = inventory.filter((item) => {
+    const reorder = Number(item.reorder_level || 0);
+    const qty = Number(item.quantity_grams || 0);
+    return reorder > 0 && Number.isFinite(qty) && qty <= reorder;
+  });
+  const hardwareAlerts = hardware.filter((item) => {
+    const reorder = Number(item.reorder_level || 0);
+    const qty = Number(item.quantity_on_hand || 0);
+    return reorder > 0 && Number.isFinite(qty) && qty <= reorder;
+  });
+
+  const metrics = [
+    { label: "Materials", value: formatQuantity(materials.length) },
+    { label: "Inventory items", value: formatQuantity(inventory.length) },
+    { label: "Inventory on hand", value: formatQuantity(totalInventoryGrams, "g") },
+    { label: "Inventory value", value: formatCurrency(totalInventoryValue) },
+    { label: "Hardware items", value: formatQuantity(hardware.length) },
+    { label: "Hardware units", value: formatQuantity(totalHardwareUnits) },
+  ];
+
+  reportMetricsEl.innerHTML = metrics
+    .map(
+      (metric) => `
+        <div class="report-metric">
+          <span class="label">${escapeHtml(metric.label)}</span>
+          <span class="value">${escapeHtml(metric.value)}</span>
+        </div>`
+    )
+    .join("");
+
+  renderReportBars(
+    reportInventoryChartEl,
+    summarizeInventoryByMaterial(inventory),
+    "g",
+    "No inventory data yet."
+  );
+  renderReportBars(
+    reportHardwareChartEl,
+    summarizeHardwareByCategory(hardware),
+    "units",
+    "No hardware data yet."
+  );
+
+  if (!inventoryAlerts.length && !hardwareAlerts.length) {
+    reportLowStockEl.innerHTML = `<li class="muted">No items below reorder level.</li>`;
+  } else {
+    const alertLines = [
+      ...inventoryAlerts.map((item) => {
+        const name = item.material ? item.material.name : `Material ${item.material_id}`;
+        const label = `${name} - ${item.location}`;
+        return {
+          label,
+          detail: `${formatQuantity(item.quantity_grams, "g")} on hand, reorder at ${formatQuantity(
+            item.reorder_level,
+            "g"
+          )}`,
+        };
+      }),
+      ...hardwareAlerts.map((item) => ({
+        label: item.name,
+        detail: `${formatQuantity(item.quantity_on_hand, item.unit_of_measure || "units")} on hand, reorder at ${formatQuantity(
+          item.reorder_level,
+          item.unit_of_measure || "units"
+        )}`,
+      })),
+    ];
+    reportLowStockEl.innerHTML = alertLines
+      .map(
+        (alert) => `
+          <li class="report-alert">
+            <strong>${escapeHtml(alert.label)}</strong><br />
+            <span>${escapeHtml(alert.detail)}</span>
+          </li>`
+      )
+      .join("");
+  }
+
+  reportUsageEl.innerHTML = buildUsageSnapshot();
+}
+
+function summarizeInventoryByMaterial(inventory) {
+  const totals = new Map();
+  inventory.forEach((item) => {
+    const name = item.material ? item.material.name : `Material ${item.material_id}`;
+    const color = item.material && item.material.color ? ` (${item.material.color})` : "";
+    const label = `${name}${color}`;
+    const current = totals.get(label) || 0;
+    totals.set(label, current + Number(item.quantity_grams || 0));
+  });
+  return Array.from(totals.entries())
+    .map(([label, value]) => ({ label, value }))
+    .filter((item) => Number.isFinite(item.value))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 6);
+}
+
+function summarizeHardwareByCategory(hardware) {
+  const totals = new Map();
+  hardware.forEach((item) => {
+    const category = item.category && item.category.trim() ? item.category.trim() : "Uncategorized";
+    const current = totals.get(category) || 0;
+    totals.set(category, current + Number(item.quantity_on_hand || 0));
+  });
+  return Array.from(totals.entries())
+    .map(([label, value]) => ({ label, value }))
+    .filter((item) => Number.isFinite(item.value))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 6);
+}
+
+function renderReportBars(targetEl, items, unitLabel, emptyText) {
+  if (!targetEl) return;
+  if (!items.length) {
+    targetEl.innerHTML = `<div class="muted">${escapeHtml(emptyText)}</div>`;
+    return;
+  }
+  const maxValue = Math.max(...items.map((item) => item.value));
+  targetEl.innerHTML = items
+    .map((item) => {
+      const width = maxValue > 0 ? Math.max(2, (item.value / maxValue) * 100) : 0;
+      return `
+        <div class="report-bar">
+          <div class="report-bar-label">${escapeHtml(item.label)}</div>
+          <div class="report-bar-track">
+            <span class="report-bar-fill" style="width: ${width}%"></span>
+          </div>
+          <div class="report-bar-value">${escapeHtml(formatQuantity(item.value, unitLabel))}</div>
+        </div>`;
+    })
+    .join("");
+}
+
+function summarizeMovementStats(movements, valueKey) {
+  return movements.reduce(
+    (acc, move) => {
+      const change = Number(move[valueKey] || 0);
+      if (!Number.isFinite(change)) {
+        return acc;
+      }
+      if (change >= 0) {
+        acc.incoming += change;
+      } else {
+        acc.outgoing += Math.abs(change);
+      }
+      acc.net += change;
+      acc.count += 1;
+      return acc;
+    },
+    { incoming: 0, outgoing: 0, net: 0, count: 0 }
+  );
+}
+
+function buildUsageSnapshot() {
+  const inventoryMoves = Array.isArray(state.lastInventoryMovements) ? state.lastInventoryMovements : [];
+  const hardwareMoves = Array.isArray(state.lastHardwareMovements) ? state.lastHardwareMovements : [];
+  if (!inventoryMoves.length && !hardwareMoves.length) {
+    return "Select an inventory or hardware item in Stock Movements to load usage history here.";
+  }
+
+  const lines = [];
+  if (inventoryMoves.length) {
+    const stats = summarizeMovementStats(inventoryMoves, "change_grams");
+    lines.push(
+      `Inventory movements loaded: ${stats.count} entries, ${formatQuantity(
+        stats.outgoing,
+        "g"
+      )} out, ${formatQuantity(stats.incoming, "g")} in.`
+    );
+  }
+  if (hardwareMoves.length) {
+    const stats = summarizeMovementStats(hardwareMoves, "change_units");
+    lines.push(
+      `Hardware movements loaded: ${stats.count} entries, ${formatQuantity(
+        stats.outgoing,
+        "units"
+      )} out, ${formatQuantity(stats.incoming, "units")} in.`
+    );
+  }
+  return lines.map((line) => `<div>${escapeHtml(line)}</div>`).join("");
 }
 
 function renderOrderWorks() {
@@ -1204,7 +1426,9 @@ function resetHardwareForm() {
 
 async function loadHardwareMovements(itemId) {
   const movements = await api(`/hardware/${itemId}/movements`);
+  state.lastHardwareMovements = Array.isArray(movements) ? movements : [];
   renderHardwareMovements(movements);
+  renderReports();
 }
 
 function renderHardwareMovements(movements) {
@@ -1548,6 +1772,29 @@ function formatOrderStatus(value) {
     .toLowerCase()
     .replace(/_/g, " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function formatQuantity(value, unit) {
+  if (!Number.isFinite(Number(value))) {
+    return "-";
+  }
+  const formatted = Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 });
+  return unit ? `${formatted} ${unit}` : formatted;
+}
+
+function formatCurrency(amount, currency = "USD") {
+  if (!Number.isFinite(Number(amount))) {
+    return "-";
+  }
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: currency.toUpperCase(),
+      maximumFractionDigits: 2,
+    }).format(Number(amount));
+  } catch {
+    return `$${Number(amount).toFixed(2)}`;
+  }
 }
 
 function formatCurrencyValue(cents, currency) {
