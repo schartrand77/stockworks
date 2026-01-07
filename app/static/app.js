@@ -123,6 +123,9 @@ const reportInventoryChartEl = document.getElementById("report-inventory-chart")
 const reportLowStockEl = document.getElementById("report-low-stock");
 const reportHardwareChartEl = document.getElementById("report-hardware-chart");
 const reportUsageEl = document.getElementById("report-usage");
+const reportOrderworksMetricsEl = document.getElementById("report-orderworks-metrics");
+const reportOrderworksStatusEl = document.getElementById("report-orderworks-status");
+const reportOrderworksRevenueEl = document.getElementById("report-orderworks-revenue");
 const installButton = document.getElementById("install-app");
 let themeToggleBtn = null;
 let themeToggleLabelEl = null;
@@ -477,7 +480,12 @@ async function refreshAll() {
 }
 
 async function refreshReports() {
-  await Promise.all([loadMaterials(), loadInventory(), loadHardware()]);
+  await Promise.all([
+    loadMaterials(),
+    loadInventory(),
+    loadHardware(),
+    loadOrderWorksJobs({ silent: true }).catch(() => null),
+  ]);
   renderReports();
   setMessage("Reports updated.", "success");
 }
@@ -549,7 +557,9 @@ async function loadHardware() {
 }
 
 async function loadOrderWorksJobs({ silent = false } = {}) {
-  if (!orderworksTableBody) {
+  const shouldFetch =
+    orderworksTableBody || reportOrderworksMetricsEl || reportOrderworksStatusEl || reportOrderworksRevenueEl;
+  if (!shouldFetch) {
     return;
   }
   try {
@@ -568,7 +578,10 @@ async function loadOrderWorksJobs({ silent = false } = {}) {
       setMessage(state.orderworksError, "error");
     }
   }
-  renderOrderWorks();
+  if (orderworksTableBody) {
+    renderOrderWorks();
+  }
+  renderReports();
 }
 
 async function loadMovements(itemId) {
@@ -804,6 +817,7 @@ function renderReports() {
   }
 
   reportUsageEl.innerHTML = buildUsageSnapshot();
+  renderOrderWorksReports();
 }
 
 function summarizeInventoryByMaterial(inventory) {
@@ -836,7 +850,7 @@ function summarizeHardwareByCategory(hardware) {
     .slice(0, 6);
 }
 
-function renderReportBars(targetEl, items, unitLabel, emptyText) {
+function renderReportBars(targetEl, items, unitLabel, emptyText, formatValue) {
   if (!targetEl) return;
   if (!items.length) {
     targetEl.innerHTML = `<div class="muted">${escapeHtml(emptyText)}</div>`;
@@ -846,16 +860,190 @@ function renderReportBars(targetEl, items, unitLabel, emptyText) {
   targetEl.innerHTML = items
     .map((item) => {
       const width = maxValue > 0 ? Math.max(2, (item.value / maxValue) * 100) : 0;
+      const valueLabel = formatValue ? formatValue(item.value) : formatQuantity(item.value, unitLabel);
       return `
         <div class="report-bar">
           <div class="report-bar-label">${escapeHtml(item.label)}</div>
           <div class="report-bar-track">
             <span class="report-bar-fill" style="width: ${width}%"></span>
           </div>
-          <div class="report-bar-value">${escapeHtml(formatQuantity(item.value, unitLabel))}</div>
+          <div class="report-bar-value">${escapeHtml(valueLabel)}</div>
         </div>`;
     })
     .join("");
+}
+
+function normalizeOrderStatus(status) {
+  if (!status) return "unknown";
+  const normalized = String(status).trim().toLowerCase();
+  if (!normalized) return "unknown";
+  if (normalized === "cancelled") return "canceled";
+  return normalized;
+}
+
+function parseJobDate(job) {
+  const raw =
+    job.makerworksCreatedAt || job.createdAt || job.makerworksUpdatedAt || job.updatedAt || job.fulfilledAt;
+  if (!raw) return null;
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return date;
+}
+
+function formatShortDate(date) {
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function renderOrderWorksReports() {
+  if (!reportOrderworksMetricsEl || !reportOrderworksStatusEl || !reportOrderworksRevenueEl) {
+    return;
+  }
+
+  const setFallback = (message) => {
+    const safeMessage = escapeHtml(message);
+    reportOrderworksMetricsEl.innerHTML = `<div class="muted">${safeMessage}</div>`;
+    reportOrderworksStatusEl.innerHTML = `<div class="muted">${safeMessage}</div>`;
+    reportOrderworksRevenueEl.innerHTML = `<div class="muted">${safeMessage}</div>`;
+  };
+
+  if (!state.orderworksConfigured) {
+    setFallback("OrderWorks integration is not configured.");
+    return;
+  }
+  if (state.orderworksError) {
+    setFallback(state.orderworksError);
+    return;
+  }
+
+  const jobs = Array.isArray(state.orderworksJobs) ? state.orderworksJobs : [];
+  if (!jobs.length) {
+    setFallback("No OrderWorks jobs available.");
+    return;
+  }
+
+  const totals = {
+    totalCents: 0,
+    totalCount: 0,
+    openCount: 0,
+    completedCount: 0,
+    last7DaysCount: 0,
+    last30DaysCents: 0,
+  };
+  const statusCounts = new Map();
+  const now = new Date();
+  const last7Days = new Date(now);
+  last7Days.setDate(now.getDate() - 6);
+  const last30Days = new Date(now);
+  last30Days.setDate(now.getDate() - 29);
+  const currencies = new Set();
+
+  jobs.forEach((job) => {
+    const status = normalizeOrderStatus(job.status);
+    const current = statusCounts.get(status) || 0;
+    statusCounts.set(status, current + 1);
+    totals.totalCount += 1;
+    if (status === "pending" || status === "printing") {
+      totals.openCount += 1;
+    }
+    if (status === "completed") {
+      totals.completedCount += 1;
+    }
+
+    if (job.currency) {
+      currencies.add(String(job.currency).toUpperCase());
+    }
+    const cents = Number(job.totalCents);
+    const createdAt = parseJobDate(job);
+    if (createdAt) {
+      if (createdAt >= last7Days) {
+        totals.last7DaysCount += 1;
+      }
+      if (createdAt >= last30Days && Number.isFinite(cents)) {
+        totals.last30DaysCents += cents;
+      }
+    }
+    if (Number.isFinite(cents)) {
+      totals.totalCents += cents;
+    }
+  });
+
+  const currency = currencies.size === 1 ? Array.from(currencies)[0] : "USD";
+  const averageCents = totals.totalCount ? totals.totalCents / totals.totalCount : 0;
+  const metrics = [
+    { label: "Jobs total", value: formatQuantity(totals.totalCount) },
+    { label: "Open jobs", value: formatQuantity(totals.openCount) },
+    { label: "Completed jobs", value: formatQuantity(totals.completedCount) },
+    { label: "Jobs last 7 days", value: formatQuantity(totals.last7DaysCount) },
+    { label: "Revenue last 30 days", value: formatCurrencyValue(totals.last30DaysCents, currency) },
+    { label: "Average job value", value: formatCurrencyValue(averageCents, currency) },
+  ];
+
+  reportOrderworksMetricsEl.innerHTML = metrics
+    .map(
+      (metric) => `
+        <div class="report-metric">
+          <span class="label">${escapeHtml(metric.label)}</span>
+          <span class="value">${escapeHtml(metric.value)}</span>
+        </div>`
+    )
+    .join("");
+
+  const statusOrder = ["pending", "printing", "completed", "canceled", "refunded", "failed", "unknown"];
+  const statusItems = [];
+  statusOrder.forEach((status) => {
+    if (statusCounts.has(status)) {
+      statusItems.push({ label: formatOrderStatus(status), value: statusCounts.get(status) });
+      statusCounts.delete(status);
+    }
+  });
+  Array.from(statusCounts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .forEach(([status, count]) => {
+      statusItems.push({ label: formatOrderStatus(status), value: count });
+    });
+
+  renderReportBars(reportOrderworksStatusEl, statusItems, "jobs", "No job status data yet.");
+
+  const dayBuckets = [];
+  for (let i = 13; i >= 0; i -= 1) {
+    const day = new Date(now);
+    day.setDate(now.getDate() - i);
+    day.setHours(0, 0, 0, 0);
+    dayBuckets.push({
+      key: `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(
+        2,
+        "0"
+      )}`,
+      label: formatShortDate(day),
+      value: 0,
+    });
+  }
+
+  jobs.forEach((job) => {
+    const createdAt = parseJobDate(job);
+    if (!createdAt) return;
+    const dayKey = `${createdAt.getFullYear()}-${String(createdAt.getMonth() + 1).padStart(2, "0")}-${String(
+      createdAt.getDate()
+    ).padStart(2, "0")}`;
+    const bucket = dayBuckets.find((entry) => entry.key === dayKey);
+    if (!bucket) return;
+    const cents = Number(job.totalCents);
+    if (Number.isFinite(cents)) {
+      bucket.value += cents;
+    }
+  });
+
+  const hasRevenue = dayBuckets.some((entry) => entry.value > 0);
+  renderReportBars(
+    reportOrderworksRevenueEl,
+    hasRevenue ? dayBuckets : [],
+    "",
+    "No revenue recorded in the last 14 days.",
+    (value) => formatCurrencyValue(value, currency)
+  );
 }
 
 function summarizeMovementStats(movements, valueKey) {
