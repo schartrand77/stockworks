@@ -721,7 +721,13 @@ function renderHardware() {
 }
 
 function renderReports() {
-  if (!reportMetricsEl || !reportInventoryChartEl || !reportLowStockEl || !reportHardwareChartEl || !reportUsageEl) {
+  const metricsEl = reportMetricsEl || document.getElementById("report-metrics");
+  const inventoryChartEl = reportInventoryChartEl || document.getElementById("report-inventory-chart");
+  const lowStockEl = reportLowStockEl || document.getElementById("report-low-stock");
+  const hardwareChartEl = reportHardwareChartEl || document.getElementById("report-hardware-chart");
+  const usageEl = reportUsageEl || document.getElementById("report-usage");
+  const hasCoreTargets = metricsEl || inventoryChartEl || lowStockEl || hardwareChartEl || usageEl;
+  if (!hasCoreTargets) {
     return;
   }
   const materials = Array.isArray(state.materials) ? state.materials : [];
@@ -759,64 +765,74 @@ function renderReports() {
     { label: "Hardware units", value: formatQuantity(totalHardwareUnits) },
   ];
 
-  reportMetricsEl.innerHTML = metrics
-    .map(
-      (metric) => `
-        <div class="report-metric">
-          <span class="label">${escapeHtml(metric.label)}</span>
-          <span class="value">${escapeHtml(metric.value)}</span>
-        </div>`
-    )
-    .join("");
-
-  renderReportBars(
-    reportInventoryChartEl,
-    summarizeInventoryByMaterial(inventory),
-    "g",
-    "No inventory data yet."
-  );
-  renderReportBars(
-    reportHardwareChartEl,
-    summarizeHardwareByCategory(hardware),
-    "units",
-    "No hardware data yet."
-  );
-
-  if (!inventoryAlerts.length && !hardwareAlerts.length) {
-    reportLowStockEl.innerHTML = `<li class="muted">No items below reorder level.</li>`;
-  } else {
-    const alertLines = [
-      ...inventoryAlerts.map((item) => {
-        const name = item.material ? item.material.name : `Material ${item.material_id}`;
-        const label = `${name} - ${item.location}`;
-        return {
-          label,
-          detail: `${formatQuantity(item.quantity_grams, "g")} on hand, reorder at ${formatQuantity(
-            item.reorder_level,
-            "g"
-          )}`,
-        };
-      }),
-      ...hardwareAlerts.map((item) => ({
-        label: item.name,
-        detail: `${formatQuantity(item.quantity_on_hand, item.unit_of_measure || "units")} on hand, reorder at ${formatQuantity(
-          item.reorder_level,
-          item.unit_of_measure || "units"
-        )}`,
-      })),
-    ];
-    reportLowStockEl.innerHTML = alertLines
+  if (metricsEl) {
+    metricsEl.innerHTML = metrics
       .map(
-        (alert) => `
-          <li class="report-alert">
-            <strong>${escapeHtml(alert.label)}</strong><br />
-            <span>${escapeHtml(alert.detail)}</span>
-          </li>`
+        (metric) => `
+          <div class="report-metric">
+            <span class="label">${escapeHtml(metric.label)}</span>
+            <span class="value">${escapeHtml(metric.value)}</span>
+          </div>`
       )
       .join("");
   }
 
-  reportUsageEl.innerHTML = buildUsageSnapshot();
+  if (inventoryChartEl) {
+    renderReportBars(
+      inventoryChartEl,
+      summarizeInventoryByMaterial(inventory),
+      "g",
+      "No inventory data yet."
+    );
+  }
+  if (hardwareChartEl) {
+    renderReportBars(
+      hardwareChartEl,
+      summarizeHardwareByCategory(hardware),
+      "units",
+      "No hardware data yet."
+    );
+  }
+
+  if (lowStockEl) {
+    if (!inventoryAlerts.length && !hardwareAlerts.length) {
+      lowStockEl.innerHTML = `<li class="muted">No items below reorder level.</li>`;
+    } else {
+      const alertLines = [
+        ...inventoryAlerts.map((item) => {
+          const name = item.material ? item.material.name : `Material ${item.material_id}`;
+          const label = `${name} - ${item.location}`;
+          return {
+            label,
+            detail: `${formatQuantity(item.quantity_grams, "g")} on hand, reorder at ${formatQuantity(
+              item.reorder_level,
+              "g"
+            )}`,
+          };
+        }),
+        ...hardwareAlerts.map((item) => ({
+          label: item.name,
+          detail: `${formatQuantity(item.quantity_on_hand, item.unit_of_measure || "units")} on hand, reorder at ${formatQuantity(
+            item.reorder_level,
+            item.unit_of_measure || "units"
+          )}`,
+        })),
+      ];
+      lowStockEl.innerHTML = alertLines
+        .map(
+          (alert) => `
+            <li class="report-alert">
+              <strong>${escapeHtml(alert.label)}</strong><br />
+              <span>${escapeHtml(alert.detail)}</span>
+            </li>`
+        )
+        .join("");
+    }
+  }
+
+  if (usageEl) {
+    usageEl.innerHTML = buildUsageSnapshot();
+  }
   renderOrderWorksReports();
 }
 
