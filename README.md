@@ -1,97 +1,62 @@
-# StockWorks Inventory App
+# StockWorks Inventory App - Simple User Manual
 
-StockWorks is a browser-based inventory tool for 3D-printing studios. It combines filament/material management, spool-level inventory tracking, stock movement logging, and a quote builder inside a single-page interface served by FastAPI. A desktop (Tkinter) client is still available for operators who prefer an offline UI, and the underlying REST API remains open for automation.
+StockWorks keeps track of materials for a 3D-printing shop. You can record filament spools, small hardware (screws, inserts, magnets), and every stock movement. It also shows a live list of jobs from MakerWorks/OrderWorks so the production team and inventory team stay in sync.
 
-## Highlights
-- **Web UI at `http://localhost:8000/`** - manage filament, hardware, movements, and quotes visually with no external tooling.
-- **Persistent data** in `stockworks/data/` locally (or the directory you mount to `/data` inside the container) so every surface points to the same SQLite database.
-- **Hardware coverage** for magnets, heat-set inserts, screws, and any other non-filament consumables, including movement history.
-- **Full REST API** for integrations, automation, or bulk operations. Swagger docs live at `/docs`.
-- **Optional desktop GUI** (`python -m app.gui`) built with Tkinter for teams that want a native-feeling app.
-- **Installable PWA** - the UI now ships with a web manifest plus platform icons so Android and iOS users can “Add to Home Screen” for a full-screen launcher experience.
-- **OrderWorks sync** - optionally mirror the MakerWorks/OrderWorks job queue inside StockWorks so production and inventory teams stay aligned.
+## What you need to know
+- StockWorks runs in a web browser.
+- Your data is stored in one place on this computer (a small database file).
+- You can use the web app, and there is also an optional desktop app.
 
-## Run the web application
-1. Create/activate a virtual environment and install dependencies:
-   ```bash
-   python -m venv .venv
-   .\.venv\Scripts\activate        # Windows PowerShell
-   # source .venv/bin/activate     # macOS/Linux
-   pip install -r requirements.txt
-   ```
-2. Launch the FastAPI app (which now serves the SPA and the REST endpoints):
-   ```bash
-   uvicorn app.api:app --reload
-   ```
-3. Open [http://localhost:8000/](http://localhost:8000/) to use the GUI; the dashboard now covers filament spools, hardware bins, movement logs, and quoting - all powered by the same API.
+## Open StockWorks
+If StockWorks is already running, open your browser and go to:
+`http://localhost:8000/`
 
-### Docker Compose (alternative runtime)
-From the repository root (the directory that contains `docker-compose.yml`), run:
-```bash
-docker compose up --build
-```
-The compose file builds the image, maps port `8000`, and mounts `stockworks/data/` to `/data` so your SQLite database persists between container restarts. Stop it with `docker compose down`. Override configuration with standard environment variables (`PUID`, `PGID`, `STOCKWORKS_DATA_DIR`, `DATABASE_URL`, etc.) via `.env` or `-e` flags.
+If it is not running yet, ask whoever set it up to start it. You do not need to install anything yourself unless you are the admin.
 
-### Manual Docker build/run
-```bash
-docker build -t stockworks .
-docker run \
-  -p 8000:8000 \
-  -e PUID=$(id -u) \
-  -e PGID=$(id -g) \
-  -v $(pwd)/data:/data \
-  stockworks
-```
+## Main screens (plain language)
+- **Dashboard**: quick view of what is low or needs attention.
+- **Filament**: list of spools, colors, and remaining weight.
+- **Hardware**: bins of screws, inserts, magnets, and other non-filament items.
+- **Movements**: every add/remove action so you can see what changed and when.
+- **Quotes**: tools for creating a quote from materials.
+- **Orders**: job list pulled from MakerWorks/OrderWorks when integration is on.
 
-### Container configuration
-The container understands the following environment settings:
+## MakerWorks and OrderWorks integration
+StockWorks can show the job queue from MakerWorks/OrderWorks so you can see what is coming and plan inventory.
 
-- `PUID` / `PGID` - Linux user and group IDs used to run the process (defaults to `1000`/`1000`). Set these to match your Unraid user so `/data` permissions stay correct.
-- `UMASK` - File creation mask applied before the app starts (default `002`). Adjust if you need stricter or looser permissions on files inside `/data`.
-- `TZ` - Timezone string such as `UTC`, `America/New_York`, etc. Used for log timestamps.
-- `STOCKWORKS_DATA_DIR` - Directory inside the container for SQLite storage. Defaults to `/data` in Docker (and `./data` when running natively).
-- `STOCKWORKS_DB_FILENAME` - Name of the SQLite file within the data directory (default `app.db`).
-- `DATABASE_URL` - Optional override if you want to use PostgreSQL/MySQL instead of SQLite. When omitted we build `sqlite:///<STOCKWORKS_DATA_DIR>/<STOCKWORKS_DB_FILENAME>`. If you run StockWorks inside Docker, use a hostname that is reachable from the container (for example the Compose service name or `host.docker.internal`), not `localhost`.
-- `ORDERWORKS_BASE_URL` - Optional base URL used for "Open" links in the Orders tab. Leave blank if you do not need shortcuts back to OrderWorks.
-- `ORDERWORKS_ADMIN_USERNAME`, `ORDERWORKS_ADMIN_PASSWORD` - Only required when StockWorks cannot read jobs directly from the MakerWorks database and must call the OrderWorks HTTP API.
+### How it works (two options)
+1) **Direct database link (best option)**
+   - StockWorks reads the job list directly from the MakerWorks database.
+   - This is automatic once the admin points StockWorks to the same database that OrderWorks uses.
+   - When this is set, the **Orders** tab fills in on its own.
 
-## OrderWorks integration
+2) **OrderWorks login (backup option)**
+   - If StockWorks cannot reach the MakerWorks database, it can log into OrderWorks and read jobs through the OrderWorks API.
+   - This requires an OrderWorks admin username and password set up by the admin.
 
-If you also run [OrderWorks](https://github.com/schartrand77/orderworks) you can surface its MakerWorks job queue inside StockWorks:
+### What you will see
+- The **Orders** tab shows the live job list.
+- Each order can include a link that opens the same job in OrderWorks (if the admin provided the OrderWorks web address).
+- If you do not have access to MakerWorks/OrderWorks, the Orders tab will explain what is missing.
 
-- Point `DATABASE_URL` at the same MakerWorks Postgres instance shared with OrderWorks. StockWorks will read jobs directly from the `orderworks.jobs` table and populate the **Orders** tab automatically—no additional variables required.
-- Optionally set `ORDERWORKS_BASE_URL` so the "Open" links inside the Orders table jump straight to the OrderWorks dashboard entry.
-- Only when StockWorks cannot connect to the MakerWorks database (for example you remain on SQLite or network policies block database access) do you need to provide `ORDERWORKS_BASE_URL`, `ORDERWORKS_ADMIN_USERNAME`, and `ORDERWORKS_ADMIN_PASSWORD`. In that scenario StockWorks falls back to pulling data from the OrderWorks HTTP API using those credentials.
+### When to contact the admin
+Ask your admin if:
+- The Orders tab is empty or shows a message about missing access.
+- Order links do not open.
+- You believe the job list is not up to date.
 
-If neither the shared database nor the HTTP credentials are available, the Orders tab displays guidance instead of job data.
+## Optional desktop app
+Some teams prefer a desktop window instead of a browser. It uses the same data as the web app.
 
-## Desktop GUI (optional)
-The Tkinter client is still available if you prefer a native desktop workflow:
-```bash
-python -m app.gui
-```
-It reads and writes the same SQLite database as the web version, so you can mix and match.
+If your admin enabled it, they can start it with:
+`python -m app.gui`
 
-## Deploy on Unraid
-StockWorks follows the standard Unraid conventions (`/data`, `PUID`/`PGID`, `TZ`) and includes a ready-to-import Docker template under `deploy/unraid/stockworks.xml` (complete with icon/metadata).
+## For the admin (short notes)
+If you are the person who sets up StockWorks:
+- Web app runs at `http://localhost:8000/`.
+- Data lives in `stockworks/data/` by default.
+- Orders integration needs either:
+  - `DATABASE_URL` pointing to the MakerWorks database, or
+  - OrderWorks login credentials and base URL for API access.
 
-1. Clone this repository or download the latest release archive. Build and push the container image you want Unraid to consume (for example `docker build -t ghcr.io/your-user/stockworks:latest . && docker push ghcr.io/your-user/stockworks:latest`).
-2. Copy `deploy/unraid/stockworks.xml` to `/boot/config/plugins/dockerMan/templates-user/` on your server **or** paste the raw template URL (`https://raw.githubusercontent.com/steph/stockworks/main/deploy/unraid/stockworks.xml`) into the Docker tab’s “Template repositories” field.
-3. Edit the template (Docker tab ➜ **Add Container** ➜ StockWorks) and update the `<Repository>` value so it matches the image you built/pushed. Leave the default ports/environment variables unless you need overrides.
-4. Map `/data` to a persistent Unraid share such as `/mnt/user/appdata/stockworks` and set `PUID`/`PGID` to the account that owns that share (typically `99`/`100` on stock systems). Adjust `TZ` to your locale.
-5. Click **Apply**. The UI will be reachable at `http://SERVER_IP:8000/` and the OpenAPI docs at `http://SERVER_IP:8000/docs`. Because the container runs as your chosen UID/GID, file permissions remain Unraid-friendly.
-
-## Add the web app to a mobile home screen
-The `/static/site.webmanifest` plus platform icons enable full-screen launches on mobile:
-
-- **Android/Chrome** – open the site, tap the browser menu, and choose **Add to home screen**. For the full PWA install prompt on Chrome/Edge desktop (the “Install app” icon in the address bar), you must access StockWorks over `https://` (or `http://localhost`).
-- **iOS/Safari** – open the same URL, tap the share icon, pick **Add to Home Screen**, and confirm. iOS will use the bundled 180×180 touch icon and launches StockWorks without browser chrome.
-
-The manifest also advertises theme/background colors, so the splash screen matches the MakerWorks v2 palette on both platforms.
-
-## API & configuration
-- Base URL: `http://localhost:8000`
-- Docs/Playground: `http://localhost:8000/docs`
-- Environment variables: `DATABASE_URL`, `STOCKWORKS_DATA_DIR`, `STOCKWORKS_DB_FILENAME`, `PUID`, `PGID`, `TZ` (see above).
-
-Run tests or formatting tools of your choice as needed.
+If you need the detailed technical setup steps, check earlier versions of this README or the project documentation.
