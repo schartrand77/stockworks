@@ -1,62 +1,87 @@
-# StockWorks Inventory App - Simple User Manual
+# StockWorks - Everyday User Manual
 
-StockWorks keeps track of materials for a 3D-printing shop. You can record filament spools, small hardware (screws, inserts, magnets), and every stock movement. It also shows a live list of jobs from MakerWorks/OrderWorks so the production team and inventory team stay in sync.
+StockWorks is a simple tool for keeping track of materials in a 3D printing shop. It helps you see what you have, what is running low, and what jobs are coming in from MakerWorks and OrderWorks.
 
-## What you need to know
-- StockWorks runs in a web browser.
-- Your data is stored in one place on this computer (a small database file).
-- You can use the web app, and there is also an optional desktop app.
+If you can use a web page, you can use StockWorks.
 
-## Open StockWorks
-If StockWorks is already running, open your browser and go to:
-`http://localhost:8000/`
+## Quick start
+1) Open a web browser.
+2) Go to `http://localhost:8000/`
+3) The main screen opens right away.
 
-If it is not running yet, ask whoever set it up to start it. You do not need to install anything yourself unless you are the admin.
+If nothing opens, ask your admin to start StockWorks.
 
-## Main screens (plain language)
-- **Dashboard**: quick view of what is low or needs attention.
-- **Filament**: list of spools, colors, and remaining weight.
-- **Hardware**: bins of screws, inserts, magnets, and other non-filament items.
-- **Movements**: every add/remove action so you can see what changed and when.
-- **Quotes**: tools for creating a quote from materials.
-- **Orders**: job list pulled from MakerWorks/OrderWorks when integration is on.
+## What StockWorks can do
+- **Track filament spools**: color, material, remaining weight.
+- **Track hardware**: screws, inserts, magnets, and other parts.
+- **Show stock changes**: every add and remove is recorded.
+- **Create quotes**: build a material list and price estimate.
+- **Show incoming jobs**: live orders from MakerWorks and OrderWorks.
 
-## MakerWorks and OrderWorks integration
-StockWorks can show the job queue from MakerWorks/OrderWorks so you can see what is coming and plan inventory.
+## The main screens (what they mean)
+- **Dashboard**: a quick summary of items that need attention.
+- **Filament**: all spools and their remaining amounts.
+- **Hardware**: all non-filament items and quantities.
+- **Movements**: a history of changes so you can see who did what and when.
+- **Quotes**: tools for pricing and estimating materials.
+- **Orders**: the live job queue from MakerWorks and OrderWorks.
 
-### How it works (two options)
+## Screenshots
+These pictures show what the main screens look like.
+
+### Inventory
+![StockWorks inventory screen](public/screenshots/swinventory.png)
+
+### Materials
+![StockWorks materials screen](public/screenshots/swmaterials.png)
+
+### Reports
+![StockWorks reports screen](public/screenshots/swreports.png)
+
+## Using the Orders screen (MakerWorks and OrderWorks)
+The Orders screen shows the job list so production and inventory stay in sync.
+
+### How StockWorks gets the orders
+There are two ways your admin can connect StockWorks:
+
 1) **Direct database link (best option)**
    - StockWorks reads the job list directly from the MakerWorks database.
-   - This is automatic once the admin points StockWorks to the same database that OrderWorks uses.
-   - When this is set, the **Orders** tab fills in on its own.
+   - This is automatic once it is connected.
+   - The Orders screen fills in on its own.
 
 2) **OrderWorks login (backup option)**
-   - If StockWorks cannot reach the MakerWorks database, it can log into OrderWorks and read jobs through the OrderWorks API.
-   - This requires an OrderWorks admin username and password set up by the admin.
+   - If the database connection is not available, StockWorks can log in to OrderWorks.
+   - It uses an admin username and password set by your admin.
 
-### What you will see
-- The **Orders** tab shows the live job list.
-- Each order can include a link that opens the same job in OrderWorks (if the admin provided the OrderWorks web address).
-- If you do not have access to MakerWorks/OrderWorks, the Orders tab will explain what is missing.
+You do not need to choose these options yourself. The admin sets this up once.
 
-### When to contact the admin
+### What you will see in Orders
+- A list of current jobs.
+- Each job may include a link to open the same order in OrderWorks.
+- If something is missing, you will see a message explaining what is needed.
+
+### If the Orders list looks wrong
 Ask your admin if:
-- The Orders tab is empty or shows a message about missing access.
-- Order links do not open.
-- You believe the job list is not up to date.
+- The Orders list is empty.
+- The link to OrderWorks does not open.
+- The list looks out of date.
 
-## Optional desktop app
-Some teams prefer a desktop window instead of a browser. It uses the same data as the web app.
+## Optional desktop window
+Some teams prefer a desktop window instead of a browser tab. It is the same StockWorks, just in its own window.
 
-If your admin enabled it, they can start it with:
-`python -m app.gui`
+If you want this, ask your admin to enable it.
 
-## For the admin (short notes)
-If you are the person who sets up StockWorks:
-- Web app runs at `http://localhost:8000/`.
-- Data lives in `stockworks/data/` by default.
+## Simple tips
+- Use Dashboard first if you only have a minute.
+- Use Movements to answer "what changed today?"
+- Use Quotes to quickly estimate material needs.
+
+## For your admin (short, plain notes)
+If you set up StockWorks:
+- Open the app at `http://localhost:8000/`
+- Data is stored in `stockworks/data/`
 - Orders integration needs either:
-  - `DATABASE_URL` pointing to the MakerWorks database, or
-  - OrderWorks login credentials and base URL for API access.
+  - A MakerWorks database link, or
+  - OrderWorks login details and the OrderWorks web address
 
-If you need the detailed technical setup steps, check earlier versions of this README or the project documentation.
+If you need full technical setup steps, ask the development team for the full admin guide.
