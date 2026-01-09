@@ -23,7 +23,7 @@
       <div>
         <span class="brand-chip" aria-hidden="true">MakerWorks v2</span>
         <h1>StockWorks Inventory</h1>
-        <p>Manage filament materials, inventory, stock movements, and pricing.</p>
+        <p>Manage filament materials, inventory, model sales, stock movements, and pricing.</p>
       </div>
       <div class="header-actions">
         <button id="install-app" type="button" hidden>Install app</button>
@@ -72,6 +72,17 @@
           data-tab-target="inventory-panel"
         >
           Inventory
+        </button>
+        <button
+          class="tab-button"
+          id="tab-models"
+          type="button"
+          role="tab"
+          aria-selected="false"
+          aria-controls="models-panel"
+          data-tab-target="models-panel"
+        >
+          Models
         </button>
         <button
           class="tab-button"
@@ -292,6 +303,155 @@
               <button type="button" id="inventory-prev">Prev</button>
               <span class="pagination-page" id="inventory-page">Page 1 of 1</span>
               <button type="button" id="inventory-next">Next</button>
+            </div>
+          </div>
+        </div>
+        </section>
+
+        <section class="card tab-panel" id="models-panel" role="tabpanel" aria-labelledby="tab-models" hidden>
+        <div class="card-header">
+          <div>
+            <h2>3D Print Models</h2>
+            <p>Catalog model files, pricing, and sales performance.</p>
+          </div>
+          <div class="card-actions">
+            <button id="models-clear" type="button">Clear form</button>
+            <button id="models-refresh" type="button">Refresh list</button>
+          </div>
+        </div>
+        <div class="card-body" id="models-body">
+          <div class="two-columns">
+            <form id="model-form" class="stack">
+              <input type="hidden" id="model-id" />
+              <label>
+                Model name
+                <input type="text" id="model-name" required placeholder="Shelf Buddy Desk Organizer" />
+              </label>
+              <label>
+                Category
+                <input type="text" id="model-category" placeholder="Fidgets, props, organization..." />
+              </label>
+              <label>
+                SKU / listing ID
+                <input type="text" id="model-sku" placeholder="MODEL-1021" />
+              </label>
+              <label>
+                Designer
+                <input type="text" id="model-designer" placeholder="Studio or designer name" />
+              </label>
+              <label>
+                Marketplace / platform
+                <input type="text" id="model-platform" placeholder="Etsy, Cults3D, Shopify..." />
+              </label>
+              <label>
+                File location
+                <input type="text" id="model-file" placeholder="Folder path or URL" />
+              </label>
+              <label>
+                Version
+                <input type="text" id="model-version" placeholder="v1.2" />
+              </label>
+              <label>
+                Unit price (USD)
+                <input type="number" min="0" step="0.01" id="model-price" />
+              </label>
+              <label>
+                Status
+                <select id="model-active">
+                  <option value="true">Active</option>
+                  <option value="false">Inactive</option>
+                </select>
+              </label>
+              <label class="full-width">
+                Notes
+                <textarea id="model-notes" rows="3" placeholder="Print notes, licensing, or variants..."></textarea>
+              </label>
+              <div class="form-actions">
+                <button type="submit">Save model</button>
+                <button type="button" id="model-delete" class="danger">Delete</button>
+              </div>
+            </form>
+            <div>
+              <div class="table-wrapper">
+                <table id="models-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Category</th>
+                      <th>SKU</th>
+                      <th>Price</th>
+                      <th>Status</th>
+                      <th>Sold</th>
+                      <th>Revenue</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+              <div class="pagination" id="models-pagination">
+                <span class="pagination-info" id="models-pagination-info">Showing 0-0 of 0</span>
+                <div class="pagination-actions">
+                  <button type="button" id="models-prev">Prev</button>
+                  <span class="pagination-page" id="models-page">Page 1 of 1</span>
+                  <button type="button" id="models-next">Next</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="model-sales-grid">
+            <form id="model-sale-form" class="stack">
+              <label>
+                Model
+                <select id="model-sale-model" required>
+                  <option value="">Select model...</option>
+                </select>
+              </label>
+              <label>
+                Quantity
+                <input type="number" min="1" step="1" id="model-sale-quantity" required />
+              </label>
+              <label>
+                Unit price
+                <input type="number" min="0" step="0.01" id="model-sale-price" required />
+              </label>
+              <label>
+                Currency
+                <input type="text" id="model-sale-currency" value="USD" />
+              </label>
+              <label>
+                Channel
+                <input type="text" id="model-sale-channel" placeholder="Etsy, Shopify, in-person..." />
+              </label>
+              <label>
+                Reference
+                <input type="text" id="model-sale-reference" placeholder="Order ID or invoice" />
+              </label>
+              <label>
+                Note
+                <input type="text" id="model-sale-note" placeholder="Optional note" />
+              </label>
+              <button type="submit">Log sale</button>
+            </form>
+            <div class="table-wrapper">
+              <table id="model-sale-table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Qty</th>
+                    <th>Unit</th>
+                    <th>Total</th>
+                    <th>Channel</th>
+                    <th>Reference</th>
+                    <th>Note</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td colspan="7" class="muted">Select a model to view sales history.</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
@@ -542,6 +702,10 @@
           <section class="report-block">
             <h3>Inventory by material</h3>
             <div class="report-bars" id="report-inventory-chart"></div>
+          </section>
+          <section class="report-block">
+            <h3>Top models</h3>
+            <div class="report-bars" id="report-models-chart"></div>
           </section>
           <section class="report-block">
             <h3>Low stock</h3>

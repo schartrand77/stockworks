@@ -2,17 +2,21 @@ const state = {
   materials: [],
   inventory: [],
   hardware: [],
+  models: [],
   currentMaterialId: null,
   currentInventoryId: null,
   currentMovementItemId: null,
   currentHardwareId: null,
   currentHardwareMovementId: null,
+  currentModelId: null,
+  currentModelSaleId: null,
   orderworksJobs: [],
   orderworksError: null,
   orderworksConfigured: true,
   orderworksBaseUrl: "",
   lastInventoryMovements: [],
   lastHardwareMovements: [],
+  lastModelSales: [],
 };
 
 const messageEl = document.getElementById("message");
@@ -72,6 +76,10 @@ const inventoryPrevBtn = document.getElementById("inventory-prev");
 const inventoryNextBtn = document.getElementById("inventory-next");
 const inventoryPageEl = document.getElementById("inventory-page");
 const inventoryInfoEl = document.getElementById("inventory-pagination-info");
+const modelsPrevBtn = document.getElementById("models-prev");
+const modelsNextBtn = document.getElementById("models-next");
+const modelsPageEl = document.getElementById("models-page");
+const modelsInfoEl = document.getElementById("models-pagination-info");
 const hardwarePrevBtn = document.getElementById("hardware-prev");
 const hardwareNextBtn = document.getElementById("hardware-next");
 const hardwarePageEl = document.getElementById("hardware-page");
@@ -97,6 +105,36 @@ const hardwareClearBtn = document.getElementById("hardware-clear");
 const hardwareRefreshBtn = document.getElementById("hardware-refresh");
 const hardwareDeleteBtn = document.getElementById("hardware-delete");
 
+// Model references
+const modelForm = document.getElementById("model-form");
+const modelIdInput = document.getElementById("model-id");
+const modelFields = {
+  name: document.getElementById("model-name"),
+  category: document.getElementById("model-category"),
+  sku: document.getElementById("model-sku"),
+  designer: document.getElementById("model-designer"),
+  platform: document.getElementById("model-platform"),
+  file_location: document.getElementById("model-file"),
+  version: document.getElementById("model-version"),
+  unit_price: document.getElementById("model-price"),
+  active: document.getElementById("model-active"),
+  notes: document.getElementById("model-notes"),
+};
+const modelsTableBody = document.querySelector("#models-table tbody");
+const modelsClearBtn = document.getElementById("models-clear");
+const modelsRefreshBtn = document.getElementById("models-refresh");
+const modelDeleteBtn = document.getElementById("model-delete");
+
+const modelSaleForm = document.getElementById("model-sale-form");
+const modelSaleSelect = document.getElementById("model-sale-model");
+const modelSaleQuantity = document.getElementById("model-sale-quantity");
+const modelSalePrice = document.getElementById("model-sale-price");
+const modelSaleCurrency = document.getElementById("model-sale-currency");
+const modelSaleChannel = document.getElementById("model-sale-channel");
+const modelSaleReference = document.getElementById("model-sale-reference");
+const modelSaleNote = document.getElementById("model-sale-note");
+const modelSaleTableBody = document.querySelector("#model-sale-table tbody");
+
 // Movements
 const movementForm = document.getElementById("movement-form");
 const movementInventorySelect = document.getElementById("movement-inventory");
@@ -120,6 +158,7 @@ const orderworksStatusEl = document.getElementById("orderworks-status");
 const reportsRefreshBtn = document.getElementById("reports-refresh");
 const reportMetricsEl = document.getElementById("report-metrics");
 const reportInventoryChartEl = document.getElementById("report-inventory-chart");
+const reportModelsChartEl = document.getElementById("report-models-chart");
 const reportLowStockEl = document.getElementById("report-low-stock");
 const reportHardwareChartEl = document.getElementById("report-hardware-chart");
 const reportUsageEl = document.getElementById("report-usage");
@@ -139,6 +178,7 @@ const scannerStatusEl = document.getElementById("scanner-status");
 const paginationState = {
   materials: { page: 1, perPage: 10 },
   inventory: { page: 1, perPage: 10 },
+  models: { page: 1, perPage: 10 },
   hardware: { page: 1, perPage: 10 },
 };
 
@@ -274,6 +314,9 @@ function bindEvents() {
   refreshAllBtn.addEventListener("click", refreshAll);
   materialRefreshBtn.addEventListener("click", () => safeAsync(loadMaterials));
   inventoryRefreshBtn.addEventListener("click", () => safeAsync(loadInventory));
+  if (modelsRefreshBtn) {
+    modelsRefreshBtn.addEventListener("click", () => safeAsync(loadModels));
+  }
   hardwareRefreshBtn.addEventListener("click", () => safeAsync(loadHardware));
   if (orderworksRefreshBtn) {
     orderworksRefreshBtn.addEventListener("click", () => safeAsync(loadOrderWorksJobs));
@@ -283,6 +326,9 @@ function bindEvents() {
   }
   materialClearBtn.addEventListener("click", resetMaterialForm);
   inventoryClearBtn.addEventListener("click", resetInventoryForm);
+  if (modelsClearBtn) {
+    modelsClearBtn.addEventListener("click", resetModelForm);
+  }
   hardwareClearBtn.addEventListener("click", resetHardwareForm);
   materialDeleteBtn.addEventListener("click", () => {
     if (state.currentMaterialId) {
@@ -305,10 +351,22 @@ function bindEvents() {
       setMessage("Select a hardware row first.", "error");
     }
   });
+  if (modelDeleteBtn) {
+    modelDeleteBtn.addEventListener("click", () => {
+      if (state.currentModelId) {
+        deleteModel(state.currentModelId);
+      } else {
+        setMessage("Select a model row first.", "error");
+      }
+    });
+  }
 
   materialForm.addEventListener("submit", handleMaterialSubmit);
   inventoryForm.addEventListener("submit", handleInventorySubmit);
   hardwareForm.addEventListener("submit", handleHardwareSubmit);
+  if (modelForm) {
+    modelForm.addEventListener("submit", handleModelSubmit);
+  }
   if (materialFields.color_hex) {
     materialFields.color_hex.addEventListener("input", () => syncMaterialColorInputs({ source: "text" }));
   }
@@ -318,6 +376,9 @@ function bindEvents() {
   materialTableBody.addEventListener("click", handleMaterialRowClick);
   inventoryTableBody.addEventListener("click", handleInventoryRowClick);
   hardwareTableBody.addEventListener("click", handleHardwareRowClick);
+  if (modelsTableBody) {
+    modelsTableBody.addEventListener("click", handleModelRowClick);
+  }
   movementInventorySelect.addEventListener("change", () => {
     const id = Number(movementInventorySelect.value);
     state.currentMovementItemId = Number.isFinite(id) ? id : null;
@@ -338,6 +399,24 @@ function bindEvents() {
     }
   });
   hardwareMovementForm.addEventListener("submit", handleHardwareMovementSubmit);
+  if (modelSaleSelect) {
+    modelSaleSelect.addEventListener("change", () => {
+      const id = Number(modelSaleSelect.value);
+      state.currentModelSaleId = Number.isFinite(id) ? id : null;
+      if (state.currentModelSaleId) {
+        const selected = state.models.find((model) => model.id === state.currentModelSaleId);
+        if (selected && modelSalePrice && !modelSalePrice.value) {
+          modelSalePrice.value = selected.unit_price ?? "";
+        }
+        safeAsync(() => loadModelSales(state.currentModelSaleId));
+      } else {
+        renderModelSales([]);
+      }
+    });
+  }
+  if (modelSaleForm) {
+    modelSaleForm.addEventListener("submit", handleModelSaleSubmit);
+  }
   if (installButton) {
     installButton.addEventListener("click", handleInstallButtonClick);
   }
@@ -412,6 +491,10 @@ function bindEvents() {
     hardwarePrevBtn.addEventListener("click", () => changePage("hardware", -1));
     hardwareNextBtn.addEventListener("click", () => changePage("hardware", 1));
   }
+  if (modelsPrevBtn && modelsNextBtn) {
+    modelsPrevBtn.addEventListener("click", () => changePage("models", -1));
+    modelsNextBtn.addEventListener("click", () => changePage("models", 1));
+  }
 }
 
 function registerServiceWorker() {
@@ -469,6 +552,7 @@ async function refreshAll() {
     await Promise.all([
       loadMaterials(),
       loadInventory(),
+      loadModels(),
       loadHardware(),
       loadOrderWorksJobs({ silent: true }).catch(() => null),
     ]);
@@ -483,6 +567,7 @@ async function refreshReports() {
   await Promise.all([
     loadMaterials(),
     loadInventory(),
+    loadModels(),
     loadHardware(),
     loadOrderWorksJobs({ silent: true }).catch(() => null),
   ]);
@@ -530,6 +615,27 @@ async function loadInventory() {
       movementInventorySelect.value = "";
       state.currentMovementItemId = null;
       renderMovements([]);
+    }
+  }
+  renderReports();
+}
+
+async function loadModels() {
+  const models = await api("/models");
+  state.models = models;
+  renderModels();
+  populateModelOptions();
+  if (state.currentModelId && !models.some((model) => model.id === state.currentModelId)) {
+    resetModelForm();
+  }
+  if (state.currentModelSaleId) {
+    const stillExists = models.some((model) => model.id === state.currentModelSaleId);
+    if (stillExists) {
+      await loadModelSales(state.currentModelSaleId);
+    } else if (modelSaleSelect) {
+      modelSaleSelect.value = "";
+      state.currentModelSaleId = null;
+      renderModelSales([]);
     }
   }
   renderReports();
@@ -683,6 +789,44 @@ function renderInventory() {
     .join("");
 }
 
+function renderModels() {
+  const { items, total, startIndex, endIndex, maxPage } = paginate(state.models, paginationState.models);
+  updatePaginationControls({
+    total,
+    startIndex,
+    endIndex,
+    maxPage,
+    pageState: paginationState.models,
+    infoEl: modelsInfoEl,
+    pageEl: modelsPageEl,
+    prevBtn: modelsPrevBtn,
+    nextBtn: modelsNextBtn,
+  });
+  if (!state.models.length) {
+    modelsTableBody.innerHTML = `<tr><td colspan="8" class="muted">No models tracked yet.</td></tr>`;
+    return;
+  }
+  modelsTableBody.innerHTML = items
+    .map((model) => {
+      const status = model.active ? "Active" : "Inactive";
+      return `
+        <tr data-id="${model.id}">
+          <td>${escapeHtml(model.name)}</td>
+          <td>${escapeHtml(model.category || "")}</td>
+          <td>${escapeHtml(model.sku || "")}</td>
+          <td>${formatCurrency(model.unit_price || 0)}</td>
+          <td>${status}</td>
+          <td>${formatQuantity(model.total_sold || 0)}</td>
+          <td>${formatCurrency(model.total_revenue || 0)}</td>
+          <td>
+            <button class="small-button" data-action="edit" data-id="${model.id}">Edit</button>
+            <button class="small-button danger" data-action="delete" data-id="${model.id}">Delete</button>
+          </td>
+        </tr>`;
+    })
+    .join("");
+}
+
 function renderHardware() {
   const { items, total, startIndex, endIndex, maxPage } = paginate(state.hardware, paginationState.hardware);
   updatePaginationControls({
@@ -723,15 +867,17 @@ function renderHardware() {
 function renderReports() {
   const metricsEl = reportMetricsEl || document.getElementById("report-metrics");
   const inventoryChartEl = reportInventoryChartEl || document.getElementById("report-inventory-chart");
+  const modelsChartEl = reportModelsChartEl || document.getElementById("report-models-chart");
   const lowStockEl = reportLowStockEl || document.getElementById("report-low-stock");
   const hardwareChartEl = reportHardwareChartEl || document.getElementById("report-hardware-chart");
   const usageEl = reportUsageEl || document.getElementById("report-usage");
-  const hasCoreTargets = metricsEl || inventoryChartEl || lowStockEl || hardwareChartEl || usageEl;
+  const hasCoreTargets = metricsEl || inventoryChartEl || modelsChartEl || lowStockEl || hardwareChartEl || usageEl;
   if (!hasCoreTargets) {
     return;
   }
   const materials = Array.isArray(state.materials) ? state.materials : [];
   const inventory = Array.isArray(state.inventory) ? state.inventory : [];
+  const models = Array.isArray(state.models) ? state.models : [];
   const hardware = Array.isArray(state.hardware) ? state.hardware : [];
 
   const totalInventoryGrams = inventory.reduce((sum, item) => sum + Number(item.quantity_grams || 0), 0);
@@ -744,6 +890,8 @@ function renderReports() {
     return sum + qty * price;
   }, 0);
   const totalHardwareUnits = hardware.reduce((sum, item) => sum + Number(item.quantity_on_hand || 0), 0);
+  const totalModelUnits = models.reduce((sum, model) => sum + Number(model.total_sold || 0), 0);
+  const totalModelRevenue = models.reduce((sum, model) => sum + Number(model.total_revenue || 0), 0);
 
   const inventoryAlerts = inventory.filter((item) => {
     const reorder = Number(item.reorder_level || 0);
@@ -761,6 +909,9 @@ function renderReports() {
     { label: "Inventory items", value: formatQuantity(inventory.length) },
     { label: "Inventory on hand", value: formatQuantity(totalInventoryGrams, "g") },
     { label: "Inventory value", value: formatCurrency(totalInventoryValue) },
+    { label: "Model listings", value: formatQuantity(models.length) },
+    { label: "Model units sold", value: formatQuantity(totalModelUnits) },
+    { label: "Model revenue", value: formatCurrency(totalModelRevenue) },
     { label: "Hardware items", value: formatQuantity(hardware.length) },
     { label: "Hardware units", value: formatQuantity(totalHardwareUnits) },
   ];
@@ -783,6 +934,15 @@ function renderReports() {
       summarizeInventoryByMaterial(inventory),
       "g",
       "No inventory data yet."
+    );
+  }
+  if (modelsChartEl) {
+    renderReportBars(
+      modelsChartEl,
+      summarizeModelsBySales(models),
+      "sales",
+      "No model sales yet.",
+      (value) => formatQuantity(value)
     );
   }
   if (hardwareChartEl) {
@@ -844,6 +1004,20 @@ function summarizeInventoryByMaterial(inventory) {
     const label = `${name}${color}`;
     const current = totals.get(label) || 0;
     totals.set(label, current + Number(item.quantity_grams || 0));
+  });
+  return Array.from(totals.entries())
+    .map(([label, value]) => ({ label, value }))
+    .filter((item) => Number.isFinite(item.value))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 6);
+}
+
+function summarizeModelsBySales(models) {
+  const totals = new Map();
+  models.forEach((model) => {
+    const label = model.name || "Unnamed model";
+    const current = totals.get(label) || 0;
+    totals.set(label, current + Number(model.total_sold || 0));
   });
   return Array.from(totals.entries())
     .map(([label, value]) => ({ label, value }))
@@ -1247,6 +1421,23 @@ function populateHardwareOptions() {
   }
 }
 
+function populateModelOptions() {
+  if (!modelSaleSelect) {
+    return;
+  }
+  const options = state.models
+    .map((model) => {
+      const label = model.sku ? `${model.name} ƒ?" ${model.sku}` : model.name;
+      return `<option value="${model.id}">${escapeHtml(label)}</option>`;
+    })
+    .join("");
+  const currentValue = modelSaleSelect.value;
+  modelSaleSelect.innerHTML = `<option value="">Select model...</option>${options}`;
+  if (options && currentValue && state.models.some((model) => String(model.id) === currentValue)) {
+    modelSaleSelect.value = currentValue;
+  }
+}
+
 async function handleMaterialSubmit(event) {
   event.preventDefault();
   try {
@@ -1295,6 +1486,66 @@ async function handleHardwareSubmit(event) {
     }
     await loadHardware();
     setMessage("Hardware saved.", "success");
+  } catch (error) {
+    console.error(error);
+    setMessage(error.message, "error");
+  }
+}
+
+async function handleModelSubmit(event) {
+  event.preventDefault();
+  try {
+    const payload = buildModelPayload();
+    if (!payload) return;
+    if (state.currentModelId) {
+      await api(`/models/${state.currentModelId}`, { method: "PUT", body: payload });
+    } else {
+      await api("/models", { method: "POST", body: payload });
+    }
+    await loadModels();
+    setMessage("Model saved.", "success");
+  } catch (error) {
+    console.error(error);
+    setMessage(error.message, "error");
+  }
+}
+
+async function handleModelSaleSubmit(event) {
+  event.preventDefault();
+  try {
+    const modelId = Number(modelSaleSelect.value);
+    if (!Number.isFinite(modelId)) {
+      setMessage("Select a model first.", "error");
+      return;
+    }
+    const quantity = Number(modelSaleQuantity.value);
+    const unitPrice = Number(modelSalePrice.value);
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      setMessage("Quantity must be a positive number.", "error");
+      return;
+    }
+    if (!Number.isFinite(unitPrice) || unitPrice < 0) {
+      setMessage("Unit price must be zero or greater.", "error");
+      return;
+    }
+    const payload = {
+      model_id: modelId,
+      quantity: Math.round(quantity),
+      unit_price: unitPrice,
+      currency: (modelSaleCurrency.value || "USD").trim() || "USD",
+      channel: optionalString(modelSaleChannel.value),
+      reference: optionalString(modelSaleReference.value),
+      note: optionalString(modelSaleNote.value),
+    };
+    await api("/models/sales", { method: "POST", body: payload });
+    modelSaleQuantity.value = "";
+    modelSalePrice.value = "";
+    modelSaleChannel.value = "";
+    modelSaleReference.value = "";
+    modelSaleNote.value = "";
+    await loadModels();
+    await loadModelSales(modelId);
+    setMessage("Model sale logged.", "success");
   } catch (error) {
     console.error(error);
     setMessage(error.message, "error");
@@ -1374,6 +1625,17 @@ function handleHardwareRowClick(event) {
   }
 }
 
+function handleModelRowClick(event) {
+  const button = event.target.closest("button[data-action]");
+  if (!button) return;
+  const id = Number(button.dataset.id);
+  if (button.dataset.action === "edit") {
+    startModelEdit(id);
+  } else if (button.dataset.action === "delete") {
+    deleteModel(id);
+  }
+}
+
 function startMaterialEdit(id) {
   const material = state.materials.find((m) => m.id === id);
   if (!material) return;
@@ -1448,6 +1710,28 @@ function startHardwareEdit(id) {
   safeAsync(() => loadHardwareMovements(id));
 }
 
+function startModelEdit(id) {
+  const model = state.models.find((item) => item.id === id);
+  if (!model) return;
+  state.currentModelId = id;
+  modelIdInput.value = id;
+  modelFields.name.value = model.name || "";
+  modelFields.category.value = model.category || "";
+  modelFields.sku.value = model.sku || "";
+  modelFields.designer.value = model.designer || "";
+  modelFields.platform.value = model.platform || "";
+  modelFields.file_location.value = model.file_location || "";
+  modelFields.version.value = model.version || "";
+  modelFields.unit_price.value = model.unit_price ?? "";
+  modelFields.active.value = model.active ? "true" : "false";
+  modelFields.notes.value = model.notes || "";
+  if (modelSaleSelect) {
+    modelSaleSelect.value = String(id);
+    state.currentModelSaleId = id;
+    safeAsync(() => loadModelSales(id));
+  }
+}
+
 async function deleteMaterial(id) {
   if (!confirm("Delete this material? Make sure related inventory entries are removed first.")) {
     return;
@@ -1493,6 +1777,23 @@ async function deleteHardware(id) {
     }
     await loadHardware();
     setMessage("Hardware deleted.", "success");
+  } catch (error) {
+    console.error(error);
+    setMessage(error.message, "error");
+  }
+}
+
+async function deleteModel(id) {
+  if (!confirm("Delete this model and its sales history?")) {
+    return;
+  }
+  try {
+    await api(`/models/${id}`, { method: "DELETE" });
+    if (state.currentModelId === id) {
+      resetModelForm();
+    }
+    await loadModels();
+    setMessage("Model deleted.", "success");
   } catch (error) {
     console.error(error);
     setMessage(error.message, "error");
@@ -1608,6 +1909,32 @@ function buildHardwarePayload() {
   };
 }
 
+function buildModelPayload() {
+  const name = modelFields.name.value.trim();
+  if (!name) {
+    setMessage("Model name is required.", "error");
+    return null;
+  }
+  const priceValue = modelFields.unit_price.value;
+  const unitPrice = priceValue.trim() === "" ? 0 : Number(priceValue);
+  if (!Number.isFinite(unitPrice) || unitPrice < 0) {
+    setMessage("Unit price must be a positive number.", "error");
+    return null;
+  }
+  return {
+    name,
+    category: optionalString(modelFields.category.value),
+    sku: optionalString(modelFields.sku.value),
+    designer: optionalString(modelFields.designer.value),
+    platform: optionalString(modelFields.platform.value),
+    file_location: optionalString(modelFields.file_location.value),
+    version: optionalString(modelFields.version.value),
+    unit_price: unitPrice,
+    active: modelFields.active.value === "true",
+    notes: optionalString(modelFields.notes.value),
+  };
+}
+
 function resetMaterialForm() {
   materialForm.reset();
   materialIdInput.value = "";
@@ -1626,6 +1953,45 @@ function resetHardwareForm() {
   hardwareForm.reset();
   hardwareIdInput.value = "";
   state.currentHardwareId = null;
+}
+
+function resetModelForm() {
+  modelForm.reset();
+  modelIdInput.value = "";
+  state.currentModelId = null;
+}
+
+async function loadModelSales(modelId) {
+  const sales = await api(`/models/${modelId}/sales`);
+  state.lastModelSales = Array.isArray(sales) ? sales : [];
+  renderModelSales(sales);
+  renderReports();
+}
+
+function renderModelSales(sales) {
+  if (!modelSaleTableBody) {
+    return;
+  }
+  if (!sales.length) {
+    const text = state.currentModelSaleId ? "No sales logged yet." : "Select a model to view sales history.";
+    modelSaleTableBody.innerHTML = `<tr><td colspan="7" class="muted">${text}</td></tr>`;
+    return;
+  }
+  modelSaleTableBody.innerHTML = sales
+    .map((sale) => {
+      const total = Number(sale.quantity || 0) * Number(sale.unit_price || 0);
+      return `
+        <tr>
+          <td>${new Date(sale.sold_at).toLocaleString()}</td>
+          <td>${formatQuantity(sale.quantity)}</td>
+          <td>${formatCurrency(sale.unit_price, sale.currency)}</td>
+          <td>${formatCurrency(total, sale.currency)}</td>
+          <td>${escapeHtml(sale.channel || "")}</td>
+          <td>${escapeHtml(sale.reference || "")}</td>
+          <td>${escapeHtml(sale.note || "")}</td>
+        </tr>`;
+    })
+    .join("");
 }
 
 async function loadHardwareMovements(itemId) {
@@ -1747,6 +2113,8 @@ function changePage(section, delta) {
     renderMaterials();
   } else if (section === "inventory") {
     renderInventory();
+  } else if (section === "models") {
+    renderModels();
   } else if (section === "hardware") {
     renderHardware();
   }

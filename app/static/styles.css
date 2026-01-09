@@ -424,7 +424,8 @@ body::after {
 }
 
 .two-columns,
-.hardware-movements-grid {
+.hardware-movements-grid,
+.model-sales-grid {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;

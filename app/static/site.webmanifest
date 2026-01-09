@@ -28,6 +28,12 @@
       "url": "/?tab=inventory"
     },
     {
+      "name": "Models",
+      "short_name": "Models",
+      "description": "View 3D print models and sales.",
+      "url": "/?tab=models"
+    },
+    {
       "name": "Hardware",
       "short_name": "Hardware",
       "description": "View non-filament hardware bins.",

@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlmodel import Session, select
+from sqlmodel import Session, func, select
 from starlette.middleware.sessions import SessionMiddleware
 
 from .color_resolver import normalize_hex
@@ -46,6 +46,13 @@ from .models import (
     PricingBreakdown,
     PricingRequest,
     PricingResponse,
+    PrintModel,
+    PrintModelCreate,
+    PrintModelRead,
+    PrintModelSale,
+    PrintModelSaleCreate,
+    PrintModelSaleRead,
+    PrintModelUpdate,
     StockMovement,
     StockMovementCreate,
     StockMovementRead,
@@ -412,6 +419,90 @@ def list_hardware_movements(hardware_id: int, session: Session = Depends(get_ses
     return session.exec(statement).all()
 
 
+# 3D model endpoints
+@app.post("/models", response_model=PrintModelRead, status_code=status.HTTP_201_CREATED)
+def create_print_model(
+    payload: PrintModelCreate,
+    session: Session = Depends(get_session),
+    _: bool = Depends(require_auth),
+):
+    model = PrintModel.from_orm(payload)
+    session.add(model)
+    session.commit()
+    session.refresh(model)
+    return _model_read_with_totals(session, model)
+
+
+@app.get("/models", response_model=List[PrintModelRead])
+def list_print_models(session: Session = Depends(get_session), _: bool = Depends(require_auth)):
+    models = session.exec(select(PrintModel).order_by(PrintModel.name)).all()
+    totals = _model_sales_summary(session, [model.id for model in models if model.id])
+    return [_model_read_with_totals(session, model, totals) for model in models]
+
+
+@app.get("/models/{model_id}", response_model=PrintModelRead)
+def get_print_model(model_id: int, session: Session = Depends(get_session), _: bool = Depends(require_auth)):
+    model = session.get(PrintModel, model_id)
+    if not model:
+        raise HTTPException(status_code=404, detail="Model not found")
+    return _model_read_with_totals(session, model)
+
+
+@app.put("/models/{model_id}", response_model=PrintModelRead)
+def update_print_model(
+    model_id: int,
+    payload: PrintModelUpdate,
+    session: Session = Depends(get_session),
+    _: bool = Depends(require_auth),
+):
+    model = session.get(PrintModel, model_id)
+    if not model:
+        raise HTTPException(status_code=404, detail="Model not found")
+    update_data = payload.dict(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(model, key, value)
+    session.add(model)
+    session.commit()
+    session.refresh(model)
+    return _model_read_with_totals(session, model)
+
+
+@app.delete("/models/{model_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_print_model(model_id: int, session: Session = Depends(get_session), _: bool = Depends(require_auth)):
+    model = session.get(PrintModel, model_id)
+    if not model:
+        raise HTTPException(status_code=404, detail="Model not found")
+    sales = session.exec(select(PrintModelSale).where(PrintModelSale.model_id == model_id)).all()
+    for sale in sales:
+        session.delete(sale)
+    session.delete(model)
+    session.commit()
+    return None
+
+
+@app.post("/models/sales", response_model=PrintModelSaleRead, status_code=status.HTTP_201_CREATED)
+def create_print_model_sale(
+    payload: PrintModelSaleCreate,
+    session: Session = Depends(get_session),
+    _: bool = Depends(require_auth),
+):
+    _ensure_model_exists(session, payload.model_id)
+    sale = PrintModelSale.from_orm(payload)
+    session.add(sale)
+    session.commit()
+    session.refresh(sale)
+    return sale
+
+
+@app.get("/models/{model_id}/sales", response_model=List[PrintModelSaleRead])
+def list_print_model_sales(model_id: int, session: Session = Depends(get_session), _: bool = Depends(require_auth)):
+    _ensure_model_exists(session, model_id)
+    statement = select(PrintModelSale).where(PrintModelSale.model_id == model_id).order_by(
+        PrintModelSale.sold_at.desc()
+    )
+    return session.exec(statement).all()
+
+
 # Pricing endpoint
 @app.post("/pricing/quote", response_model=PricingResponse)
 def calculate_quote(
@@ -489,3 +580,44 @@ def _ensure_inventory_exists(session: Session, item_id: int) -> None:
 def _ensure_hardware_exists(session: Session, hardware_id: int) -> None:
     if not session.get(HardwareItem, hardware_id):
         raise HTTPException(status_code=404, detail="Hardware item not found")
+
+
+def _ensure_model_exists(session: Session, model_id: int) -> None:
+    if not session.get(PrintModel, model_id):
+        raise HTTPException(status_code=404, detail="Model not found")
+
+
+def _model_sales_summary(session: Session, model_ids: List[int]) -> dict[int, tuple[int, float]]:
+    if not model_ids:
+        return {}
+    statement = (
+        select(
+            PrintModelSale.model_id,
+            func.sum(PrintModelSale.quantity),
+            func.sum(PrintModelSale.quantity * PrintModelSale.unit_price),
+        )
+        .where(PrintModelSale.model_id.in_(model_ids))
+        .group_by(PrintModelSale.model_id)
+    )
+    rows = session.exec(statement).all()
+    summary: dict[int, tuple[int, float]] = {}
+    for model_id, total_units, total_revenue in rows:
+        summary[int(model_id)] = (int(total_units or 0), float(total_revenue or 0))
+    return summary
+
+
+def _model_read_with_totals(
+    session: Session,
+    model: PrintModel,
+    summary: dict[int, tuple[int, float]] | None = None,
+) -> PrintModelRead:
+    data = PrintModelRead.from_orm(model)
+    if model.id is None:
+        return data
+    totals = summary.get(model.id) if summary is not None else _model_sales_summary(session, [model.id])
+    if isinstance(totals, dict):
+        totals = totals.get(model.id)
+    if totals:
+        data.total_sold = int(totals[0] or 0)
+        data.total_revenue = float(totals[1] or 0)
+    return data

@@ -191,3 +191,71 @@ class HardwareMovementRead(HardwareMovementBase):
     id: int
     hardware_item_id: int
     created_at: datetime
+
+
+class PrintModelBase(SQLModel):
+    name: str
+    category: Optional[str] = Field(default=None, description="Model grouping such as toys, props, terrain")
+    sku: Optional[str] = Field(default=None, description="Internal SKU or listing ID")
+    designer: Optional[str] = Field(default=None, description="Designer or source")
+    platform: Optional[str] = Field(default=None, description="Marketplace or store listing")
+    file_location: Optional[str] = Field(default=None, description="Path or URL to model file")
+    version: Optional[str] = Field(default=None, description="Model version or revision")
+    unit_price: float = Field(default=0, ge=0, description="Default sale price per unit")
+    active: bool = Field(default=True)
+    notes: Optional[str] = None
+
+
+class PrintModel(PrintModelBase, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    sales: List["PrintModelSale"] = Relationship(back_populates="model")
+
+
+class PrintModelCreate(PrintModelBase):
+    pass
+
+
+class PrintModelUpdate(SQLModel):
+    name: Optional[str] = None
+    category: Optional[str] = None
+    sku: Optional[str] = None
+    designer: Optional[str] = None
+    platform: Optional[str] = None
+    file_location: Optional[str] = None
+    version: Optional[str] = None
+    unit_price: Optional[float] = Field(default=None, ge=0)
+    active: Optional[bool] = None
+    notes: Optional[str] = None
+
+
+class PrintModelRead(PrintModelBase):
+    id: int
+    total_sold: int = 0
+    total_revenue: float = 0
+
+
+class PrintModelSaleBase(SQLModel):
+    quantity: int = Field(ge=1)
+    unit_price: float = Field(ge=0)
+    currency: str = Field(default="USD")
+    channel: Optional[str] = Field(default=None, description="Store/marketplace")
+    reference: Optional[str] = Field(default=None, description="Order ID or invoice")
+    note: Optional[str] = None
+
+
+class PrintModelSale(PrintModelSaleBase, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    model_id: int = Field(foreign_key="printmodel.id")
+    sold_at: datetime = Field(default_factory=datetime.utcnow)
+
+    model: Optional[PrintModel] = Relationship(back_populates="sales")
+
+
+class PrintModelSaleCreate(PrintModelSaleBase):
+    model_id: int
+
+
+class PrintModelSaleRead(PrintModelSaleBase):
+    id: int
+    model_id: int
+    sold_at: datetime
