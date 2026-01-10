@@ -185,6 +185,7 @@ def create_material(
 ):
     data = payload.dict()
     data["color_hex"] = normalize_hex(data.get("color_hex"))
+    data["name"] = _ensure_unique_material_name(session, data["name"])
     material = Material(**data)
     session.add(material)
     session.commit()
@@ -570,6 +571,25 @@ def healthcheck() -> dict[str, str]:
 def _ensure_material_exists(session: Session, material_id: int) -> None:
     if not session.get(Material, material_id):
         raise HTTPException(status_code=404, detail="Material not found")
+
+
+def _ensure_unique_material_name(session: Session, name: str) -> str:
+    base = (name or "").strip()
+    if not base:
+        return base
+    normalized = base.lower()
+    exists = session.exec(select(Material).where(func.lower(Material.name) == normalized)).first()
+    if not exists:
+        return base
+    suffix = 1
+    while True:
+        candidate = f"{base} {suffix}"
+        candidate_exists = session.exec(
+            select(Material).where(func.lower(Material.name) == candidate.lower())
+        ).first()
+        if not candidate_exists:
+            return candidate
+        suffix += 1
 
 
 def _ensure_inventory_exists(session: Session, item_id: int) -> None:

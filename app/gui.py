@@ -6,7 +6,7 @@ from tkinter import messagebox, ttk
 from datetime import datetime
 from typing import Dict, List, Optional
 
-from sqlmodel import select
+from sqlmodel import func, select
 
 from .color_resolver import normalize_hex
 from .db import init_db, session_scope
@@ -268,10 +268,19 @@ class StockWorksApp(tk.Tk):
         if not data:
             return
         with session_scope() as session:
+            unique_name, amended = self._ensure_unique_material_name(session, data["name"])
+            if amended:
+                data["name"] = unique_name
             session.add(Material(**data))
         self.refresh_materials()
         self.clear_material_form()
-        messagebox.showinfo("Material created", "Material added successfully.")
+        if amended:
+            messagebox.showinfo(
+                "Material created",
+                f"Duplicate filament name detected. Saved as '{unique_name}'.",
+            )
+        else:
+            messagebox.showinfo("Material created", "Material added successfully.")
 
     def update_material(self) -> None:
         material_id = self._selected_material_id()
@@ -363,6 +372,23 @@ class StockWorksApp(tk.Tk):
             messagebox.showerror("Missing fields", "Name, filament type, and color are required.")
             return None
         return data
+
+    def _ensure_unique_material_name(self, session, name: str) -> tuple[str, bool]:
+        base = (name or "").strip()
+        if not base:
+            return base, False
+        if not self._material_name_exists(session, base):
+            return base, False
+        suffix = 1
+        while True:
+            candidate = f"{base} {suffix}"
+            if not self._material_name_exists(session, candidate):
+                return candidate, True
+            suffix += 1
+
+    def _material_name_exists(self, session, name: str) -> bool:
+        statement = select(Material).where(func.lower(Material.name) == name.lower())
+        return session.exec(statement).first() is not None
 
     def _selected_material_id(self) -> Optional[int]:
         selection = self.material_tree.selection()

@@ -26,6 +26,19 @@ If nothing opens, ask your admin to start StockWorks.
 - **Quotes**: tools for pricing and estimating materials.
 - **Orders**: the live job queue from MakerWorks and OrderWorks.
 
+## Barcode scanning on mobile
+StockWorks can scan barcodes using your phone or tablet camera.
+
+How it works:
+- Open StockWorks on your mobile browser.
+- In the Materials or Inventory forms, tap the barcode scan button.
+- Grant camera access when prompted.
+- Point the camera at the barcode; the value fills in automatically.
+
+Notes:
+- Camera scanning requires HTTPS (or localhost). If it does not open the camera, ask your admin to enable HTTPS.
+- If your device does not support scanning, you can still type the barcode manually.
+
 ## Screenshots
 These pictures show what the main screens look like.
 

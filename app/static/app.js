@@ -1443,13 +1443,18 @@ async function handleMaterialSubmit(event) {
   try {
     const payload = buildMaterialPayload();
     if (!payload) return;
+    let saved = null;
     if (state.currentMaterialId) {
-      await api(`/materials/${state.currentMaterialId}`, { method: "PUT", body: payload });
+      saved = await api(`/materials/${state.currentMaterialId}`, { method: "PUT", body: payload });
     } else {
-      await api("/materials", { method: "POST", body: payload });
+      saved = await api("/materials", { method: "POST", body: payload });
     }
     await loadMaterials();
-    setMessage("Material saved.", "success");
+    if (!state.currentMaterialId && saved && saved.name && saved.name !== payload.name) {
+      setMessage(`Duplicate filament name detected. Saved as "${saved.name}".`, "info");
+    } else {
+      setMessage("Material saved.", "success");
+    }
   } catch (error) {
     console.error(error);
     setMessage(error.message, "error");
