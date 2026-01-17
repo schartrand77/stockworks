@@ -295,6 +295,19 @@ body::after {
   gap: 0.6rem;
 }
 
+.table-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem 1rem;
+  align-items: flex-end;
+  margin-bottom: 0.85rem;
+}
+
+.table-control {
+  min-width: 200px;
+  flex: 1 1 200px;
+}
+
 .card-body {
   padding: clamp(1.1rem, 2.5vw, 1.7rem);
   background: var(--sap-surface-alt);

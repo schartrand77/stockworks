@@ -203,6 +203,36 @@
             </div>
           </form>
 
+          <div class="table-controls" id="materials-controls">
+            <label class="table-control">
+              Search
+              <input type="search" id="materials-search" placeholder="Search materials..." />
+            </label>
+            <label class="table-control">
+              Brand
+              <select id="materials-brand-filter">
+                <option value="all">All brands</option>
+              </select>
+            </label>
+            <label class="table-control">
+              Type
+              <select id="materials-type-filter">
+                <option value="all">All types</option>
+              </select>
+            </label>
+            <label class="table-control">
+              Category
+              <select id="materials-category-filter">
+                <option value="all">All categories</option>
+              </select>
+            </label>
+            <label class="table-control">
+              Color
+              <select id="materials-color-filter">
+                <option value="all">All colors</option>
+              </select>
+            </label>
+          </div>
           <div class="table-wrapper">
             <table id="materials-table">
               <thead>
@@ -281,6 +311,30 @@
               <button type="button" id="inventory-delete" class="danger">Delete</button>
             </div>
           </form>
+          <div class="table-controls" id="inventory-controls">
+            <label class="table-control">
+              Search
+              <input type="search" id="inventory-search" placeholder="Search inventory..." />
+            </label>
+            <label class="table-control">
+              Material
+              <select id="inventory-material-filter">
+                <option value="all">All materials</option>
+              </select>
+            </label>
+            <label class="table-control">
+              Color
+              <select id="inventory-color-filter">
+                <option value="all">All colors</option>
+              </select>
+            </label>
+            <label class="table-control">
+              Location
+              <select id="inventory-location-filter">
+                <option value="all">All locations</option>
+              </select>
+            </label>
+          </div>
           <div class="table-wrapper">
             <table id="inventory-table">
               <thead>
@@ -372,6 +426,20 @@
               </div>
             </form>
             <div>
+              <div class="table-controls" id="models-controls">
+                <label class="table-control">
+                  Search
+                  <input type="search" id="models-search" placeholder="Search models..." />
+                </label>
+                <label class="table-control">
+                  Filter
+                  <select id="models-filter">
+                    <option value="all">All models</option>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                  </select>
+                </label>
+              </div>
               <div class="table-wrapper">
                 <table id="models-table">
                   <thead>
@@ -517,6 +585,20 @@
                 <button type="button" id="hardware-delete" class="danger">Delete</button>
               </div>
             </form>
+            <div class="table-controls" id="hardware-controls">
+              <label class="table-control">
+                Search
+                <input type="search" id="hardware-search" placeholder="Search hardware..." />
+              </label>
+              <label class="table-control">
+                Filter
+                <select id="hardware-filter">
+                  <option value="all">All hardware</option>
+                  <option value="below-reorder">Below reorder</option>
+                  <option value="no-reorder">No reorder level</option>
+                </select>
+              </label>
+            </div>
             <div class="table-wrapper">
               <table id="hardware-table">
                 <thead>
@@ -632,6 +714,21 @@
             </label>
             <button type="submit">Log movement</button>
           </form>
+          <div class="table-controls" id="movement-controls">
+            <label class="table-control">
+              Search
+              <input type="search" id="movements-search" placeholder="Search reference or note..." />
+            </label>
+            <label class="table-control">
+              Type
+              <select id="movements-filter">
+                <option value="all">All types</option>
+                <option value="incoming">Incoming</option>
+                <option value="outgoing">Outgoing</option>
+                <option value="adjustment">Adjustment</option>
+              </select>
+            </label>
+          </div>
           <div class="table-wrapper">
             <table id="movement-table">
               <thead>
