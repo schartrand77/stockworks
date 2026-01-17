@@ -234,6 +234,44 @@ body::after {
   background: var(--sap-danger-soft);
 }
 
+.toast-container {
+  position: fixed;
+  top: 1.2rem;
+  right: 1.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  z-index: 80;
+  pointer-events: none;
+}
+
+.toast {
+  min-width: 240px;
+  max-width: min(360px, calc(100vw - 2rem));
+  padding: 0.75rem 0.95rem;
+  border-radius: var(--sap-radius-sm);
+  border: 1px solid var(--sap-border);
+  background: var(--sap-surface);
+  color: var(--sap-text);
+  box-shadow: var(--sap-shadow-card);
+  font-weight: 600;
+  pointer-events: auto;
+  opacity: 0;
+  transform: translateY(-10px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.toast.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.toast-success {
+  border-color: rgba(16, 126, 62, 0.4);
+  color: var(--sap-accent);
+  background: var(--sap-success-bg);
+}
+
 .tab-nav {
   display: inline-flex;
   flex-wrap: wrap;

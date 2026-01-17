@@ -183,6 +183,7 @@ const reportOrderworksRevenueEl = document.getElementById("report-orderworks-rev
 const installButton = document.getElementById("install-app");
 let themeToggleBtn = null;
 let themeToggleLabelEl = null;
+const toastContainer = document.getElementById("toast-container");
 
 const scannerOverlay = document.getElementById("barcode-scanner");
 const scannerVideo = document.getElementById("scanner-video");
@@ -1827,7 +1828,7 @@ async function handleMaterialSubmit(event) {
     if (!state.currentMaterialId && saved && saved.name && saved.name !== payload.name) {
       setMessage(`Duplicate filament name detected. Saved as "${saved.name}".`, "info");
     } else {
-      setMessage("Material saved.", "success");
+      showToast("Material saved.", "success");
     }
   } catch (error) {
     console.error(error);
@@ -1846,7 +1847,7 @@ async function handleInventorySubmit(event) {
       await api("/inventory", { method: "POST", body: payload });
     }
     await loadInventory();
-    setMessage("Inventory saved.", "success");
+    showToast("Inventory saved.", "success");
   } catch (error) {
     console.error(error);
     setMessage(error.message, "error");
@@ -1864,7 +1865,7 @@ async function handleHardwareSubmit(event) {
       await api("/hardware", { method: "POST", body: payload });
     }
     await loadHardware();
-    setMessage("Hardware saved.", "success");
+    showToast("Hardware saved.", "success");
   } catch (error) {
     console.error(error);
     setMessage(error.message, "error");
@@ -1882,7 +1883,7 @@ async function handleModelSubmit(event) {
       await api("/models", { method: "POST", body: payload });
     }
     await loadModels();
-    setMessage("Model saved.", "success");
+    showToast("Model saved.", "success");
   } catch (error) {
     console.error(error);
     setMessage(error.message, "error");
@@ -1924,7 +1925,7 @@ async function handleModelSaleSubmit(event) {
     modelSaleNote.value = "";
     await loadModels();
     await loadModelSales(modelId);
-    setMessage("Model sale logged.", "success");
+    showToast("Model sale logged.", "success");
   } catch (error) {
     console.error(error);
     setMessage(error.message, "error");
@@ -1964,7 +1965,7 @@ async function handleMovementSubmit(event) {
     if (state.currentMovementItemId) {
       await loadMovements(state.currentMovementItemId);
     }
-    setMessage("Movement logged.", "success");
+    showToast("Movement logged.", "success");
   } catch (error) {
     console.error(error);
     setMessage(error.message, "error");
@@ -2433,7 +2434,7 @@ async function handleHardwareMovementSubmit(event) {
     hardwareMovementNote.value = "";
     await loadHardware();
     await loadHardwareMovements(itemId);
-    setMessage("Hardware movement logged.", "success");
+    showToast("Hardware movement logged.", "success");
   } catch (error) {
     console.error(error);
     setMessage(error.message, "error");
@@ -2446,6 +2447,26 @@ function setMessage(text, variant = "info") {
   if (!text) {
     setTimeout(() => (messageEl.textContent = ""), 2000);
   }
+}
+
+function showToast(text, variant = "success") {
+  if (!toastContainer || !text) {
+    return;
+  }
+  const toast = document.createElement("div");
+  toast.className = `toast ${variant === "success" ? "toast-success" : ""}`;
+  toast.textContent = text;
+  toastContainer.appendChild(toast);
+  requestAnimationFrame(() => toast.classList.add("is-visible"));
+  const timeoutId = setTimeout(() => {
+    toast.classList.remove("is-visible");
+    setTimeout(() => toast.remove(), 200);
+  }, 3200);
+  toast.addEventListener("click", () => {
+    clearTimeout(timeoutId);
+    toast.classList.remove("is-visible");
+    setTimeout(() => toast.remove(), 200);
+  });
 }
 
 function paginate(items, pageState) {
