@@ -9,7 +9,6 @@ If you can use a web page, you can use StockWorks.
 2) Go to `http://localhost:8000/`
 3) The main screen opens right away.
 
-If nothing opens, ask your admin to start StockWorks.
 
 ## What StockWorks can do
 - **Track filament spools**: color, material, remaining weight.
@@ -36,8 +35,7 @@ How it works:
 - Point the camera at the barcode; the value fills in automatically.
 
 Notes:
-- Camera scanning requires HTTPS (or localhost). If it does not open the camera, ask your admin to enable HTTPS.
-- If your device does not support scanning, you can still type the barcode manually.
+- Camera scanning requires HTTPS (or localhost).
 
 ## Screenshots
 These pictures show what the main screens look like.
@@ -66,23 +64,11 @@ There are two ways your admin can connect StockWorks:
    - If the database connection is not available, StockWorks can log in to OrderWorks.
    - It uses an admin username and password set by your admin.
 
-You do not need to choose these options yourself. The admin sets this up once.
 
 ### What you will see in Orders
 - A list of current jobs.
 - Each job may include a link to open the same order in OrderWorks.
 - If something is missing, you will see a message explaining what is needed.
-
-### If the Orders list looks wrong
-Ask your admin if:
-- The Orders list is empty.
-- The link to OrderWorks does not open.
-- The list looks out of date.
-
-## Optional desktop window
-Some teams prefer a desktop window instead of a browser tab. It is the same StockWorks, just in its own window.
-
-If you want this, ask your admin to enable it.
 
 ## Simple tips
 - Use Dashboard first if you only have a minute.
@@ -97,4 +83,3 @@ If you set up StockWorks:
   - A MakerWorks database link, or
   - OrderWorks login details and the OrderWorks web address
 
-If you need full technical setup steps, ask the development team for the full admin guide.
