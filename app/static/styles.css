@@ -823,6 +823,135 @@ button.danger:hover {
   box-shadow: var(--sap-table-wrapper-shadow);
 }
 
+.inventory-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+}
+
+.inventory-card {
+  border: 1px solid var(--sap-border);
+  border-radius: var(--sap-radius-md);
+  background: var(--sap-surface);
+  box-shadow: var(--sap-shadow-card);
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.inventory-card.is-highlighted {
+  outline: 2px solid rgba(255, 199, 62, 0.5);
+  background: var(--sap-surface-alt);
+}
+
+.inventory-card-top {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.inventory-swatch {
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--sap-border-strong);
+  background: var(--swatch-color, transparent);
+  flex: 0 0 auto;
+}
+
+.inventory-title-block {
+  min-width: 0;
+}
+
+.inventory-title {
+  margin: 0;
+  font-weight: 600;
+  color: var(--sap-heading);
+  font-size: 0.98rem;
+  line-height: 1.2;
+}
+
+.inventory-subtitle {
+  margin: 0.2rem 0 0;
+  font-size: 0.82rem;
+  color: var(--sap-text-muted);
+}
+
+.inventory-qty {
+  margin-left: auto;
+  text-align: right;
+}
+
+.inventory-qty .label {
+  display: block;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sap-text-muted);
+}
+
+.inventory-qty .value {
+  display: block;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--sap-heading);
+}
+
+.inventory-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.inventory-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--sap-border);
+  background: var(--sap-surface-alt);
+  font-size: 0.74rem;
+  color: var(--sap-text);
+}
+
+.inventory-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 0.55rem 0.75rem;
+}
+
+.inventory-stat span {
+  display: block;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sap-text-muted);
+}
+
+.inventory-stat strong {
+  display: block;
+  font-size: 0.88rem;
+  color: var(--sap-heading);
+  font-weight: 600;
+}
+
+.inventory-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
+
+.inventory-empty {
+  grid-column: 1 / -1;
+  padding: 1.1rem;
+  border-radius: var(--sap-radius-md);
+  border: 1px dashed var(--sap-border-strong);
+  background: var(--sap-surface-alt);
+  text-align: center;
+}
+
 .pagination {
   display: flex;
   align-items: center;
