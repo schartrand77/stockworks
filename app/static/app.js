@@ -66,7 +66,7 @@ const inventoryFields = {
   spool_serial: document.getElementById("inventory-serial"),
   unit_cost_override: document.getElementById("inventory-cost"),
 };
-const inventoryGrid = document.getElementById("inventory-grid");
+const inventoryTableBody = document.querySelector("#inventory-table tbody");
 const inventorySearchInput = document.getElementById("inventory-search");
 const inventoryMaterialFilter = document.getElementById("inventory-material-filter");
 const inventoryColorFilter = document.getElementById("inventory-color-filter");
@@ -398,7 +398,7 @@ function bindEvents() {
     materialColorPicker.addEventListener("input", () => syncMaterialColorInputs({ source: "picker" }));
   }
   materialTableBody.addEventListener("click", handleMaterialRowClick);
-  inventoryGrid.addEventListener("click", handleInventoryRowClick);
+  inventoryTableBody.addEventListener("click", handleInventoryRowClick);
   hardwareTableBody.addEventListener("click", handleHardwareRowClick);
   if (modelsTableBody) {
     modelsTableBody.addEventListener("click", handleModelRowClick);
@@ -1109,30 +1109,7 @@ function renderMaterials() {
 
 function renderInventory() {
   const filtered = filterInventory(state.inventory);
-  const sorted = filtered
-    .slice()
-    .sort((a, b) => {
-      const aMaterial = a.material || {};
-      const bMaterial = b.material || {};
-      const keyA = [
-        normalizeSearchTerm(aMaterial.brand),
-        normalizeSearchTerm(aMaterial.filament_type),
-        normalizeSearchTerm(aMaterial.category),
-        normalizeSearchTerm(aMaterial.name),
-      ];
-      const keyB = [
-        normalizeSearchTerm(bMaterial.brand),
-        normalizeSearchTerm(bMaterial.filament_type),
-        normalizeSearchTerm(bMaterial.category),
-        normalizeSearchTerm(bMaterial.name),
-      ];
-      for (let i = 0; i < keyA.length; i += 1) {
-        if (keyA[i] === keyB[i]) continue;
-        return keyA[i].localeCompare(keyB[i]);
-      }
-      return 0;
-    });
-  const { items, total, startIndex, endIndex, maxPage } = paginate(sorted, paginationState.inventory);
+  const { items, total, startIndex, endIndex, maxPage } = paginate(filtered, paginationState.inventory);
   updatePaginationControls({
     total,
     startIndex,
@@ -1145,68 +1122,29 @@ function renderInventory() {
     nextBtn: inventoryNextBtn,
   });
   if (!state.inventory.length) {
-    inventoryGrid.innerHTML = `<div class="inventory-empty muted">No inventory tracked yet.</div>`;
+    inventoryTableBody.innerHTML = `<tr><td colspan="7" class="muted">No inventory tracked yet.</td></tr>`;
     return;
   }
   if (!filtered.length) {
-    inventoryGrid.innerHTML = `<div class="inventory-empty muted">No matches for the current search or filter.</div>`;
+    inventoryTableBody.innerHTML = `<tr><td colspan="7" class="muted">No matches for the current search or filter.</td></tr>`;
     return;
   }
-  inventoryGrid.innerHTML = items
+  inventoryTableBody.innerHTML = items
     .map((item) => {
-      const material = item.material || {};
-      const swatch = resolveSwatchColor(material.color, material.color_hex);
-      const brand = escapeHtml(material.brand || "Unbranded");
-      const type = escapeHtml(material.filament_type || "Unknown type");
-      const category = escapeHtml(material.category || "Uncategorized");
-      const name = escapeHtml(material.name || "Unknown material");
-      const colorName = escapeHtml(material.color || "Unknown color");
-      const location = escapeHtml(item.location || "-");
-      const serial = escapeHtml(item.spool_serial || "-");
-      const reorder = formatQuantity(item.reorder_level, "g");
-      const remaining = formatQuantity(item.quantity_grams, "g");
-      const unitCost = item.unit_cost_override ? formatCurrency(item.unit_cost_override) : "-";
+      const materialLabel = formatMaterialLabel(item.material);
       return `
-        <div class="inventory-card" role="listitem" data-id="${item.id}">
-          <div class="inventory-card-top">
-            <span class="inventory-swatch" style="--swatch-color: ${swatch || "transparent"}" aria-hidden="true"></span>
-            <div class="inventory-title-block">
-              <p class="inventory-title">${name}</p>
-              <p class="inventory-subtitle">${colorName}</p>
-            </div>
-            <div class="inventory-qty">
-              <span class="label">Remaining</span>
-              <span class="value">${remaining}</span>
-            </div>
-          </div>
-          <div class="inventory-meta">
-            <span class="inventory-pill"><span class="color-dot" style="--swatch-color: ${swatch || "transparent"}"></span>${brand}</span>
-            <span class="inventory-pill"><span class="color-dot" style="--swatch-color: ${swatch || "transparent"}"></span>${type}</span>
-            <span class="inventory-pill"><span class="color-dot" style="--swatch-color: ${swatch || "transparent"}"></span>${category}</span>
-          </div>
-          <div class="inventory-stats">
-            <div class="inventory-stat">
-              <span>Location</span>
-              <strong>${location}</strong>
-            </div>
-            <div class="inventory-stat">
-              <span>Reorder</span>
-              <strong>${reorder}</strong>
-            </div>
-            <div class="inventory-stat">
-              <span>Serial</span>
-              <strong>${serial}</strong>
-            </div>
-            <div class="inventory-stat">
-              <span>Unit cost</span>
-              <strong>${unitCost}</strong>
-            </div>
-          </div>
-          <div class="inventory-actions">
+        <tr data-id="${item.id}">
+          <td>${materialLabel}</td>
+          <td>${escapeHtml(item.location)}</td>
+          <td>${Number(item.quantity_grams).toFixed(2)}</td>
+          <td>${Number(item.reorder_level).toFixed(2)}</td>
+          <td>${escapeHtml(item.spool_serial || "")}</td>
+          <td>${item.unit_cost_override ? `$${Number(item.unit_cost_override).toFixed(2)}` : "-"}</td>
+          <td>
             <button class="small-button" data-action="edit" data-id="${item.id}">Edit</button>
             <button class="small-button danger" data-action="delete" data-id="${item.id}">Delete</button>
-          </div>
-        </div>`;
+          </td>
+        </tr>`;
     })
     .join("");
 }
@@ -2125,11 +2063,11 @@ function highlightInventoryRow(id) {
     pageState.page = targetPage;
     renderInventory();
   }
-  const card = inventoryGrid.querySelector(`.inventory-card[data-id="${id}"]`);
-  if (!card) return;
-  inventoryGrid.querySelectorAll(".inventory-card.is-highlighted").forEach((el) => el.classList.remove("is-highlighted"));
-  card.classList.add("is-highlighted");
-  card.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+  const row = inventoryTableBody.querySelector(`tr[data-id="${id}"]`);
+  if (!row) return;
+  inventoryTableBody.querySelectorAll("tr.is-highlighted").forEach((el) => el.classList.remove("is-highlighted"));
+  row.classList.add("is-highlighted");
+  row.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
 }
 
 function startHardwareEdit(id) {

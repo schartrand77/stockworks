@@ -336,7 +336,22 @@
               </select>
             </label>
           </div>
-          <div class="inventory-grid" id="inventory-grid" role="list" aria-live="polite"></div>
+          <div class="table-wrapper">
+            <table id="inventory-table">
+              <thead>
+                <tr>
+                  <th>Material</th>
+                  <th>Location</th>
+                  <th>Qty (g)</th>
+                  <th>Reorder</th>
+                  <th>Serial</th>
+                  <th>Unit cost</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
           <div class="pagination" id="inventory-pagination">
             <span class="pagination-info" id="inventory-pagination-info">Showing 0-0 of 0</span>
             <div class="pagination-actions">
