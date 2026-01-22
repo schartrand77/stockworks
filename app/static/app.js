@@ -53,6 +53,8 @@ const materialClearBtn = document.getElementById("material-clear");
 const materialRefreshBtn = document.getElementById("material-refresh");
 const materialDeleteBtn = document.getElementById("material-delete");
 const materialBarcodeScanBtn = document.getElementById("material-barcode-scan");
+const materialBarcodeGenerateBtn = document.getElementById("material-barcode-generate");
+const materialBarcodePrintBtn = document.getElementById("material-barcode-print");
 const filamentTypeDatalist = document.getElementById("filament-type-list");
 
 // Inventory references
@@ -556,6 +558,23 @@ function bindEvents() {
           setMessage(`Scanned barcode: ${value}`, "success");
         },
       });
+    });
+  }
+  if (materialBarcodeGenerateBtn) {
+    materialBarcodeGenerateBtn.addEventListener("click", () => {
+      const hasBarcode = materialFields.barcode.value.trim();
+      if (hasBarcode) {
+        const confirmed = confirm("Replace the existing barcode with a new one?");
+        if (!confirmed) {
+          return;
+        }
+      }
+      safeAsync(() => generateMaterialBarcode({ force: Boolean(hasBarcode) }));
+    });
+  }
+  if (materialBarcodePrintBtn) {
+    materialBarcodePrintBtn.addEventListener("click", () => {
+      safeAsync(() => printMaterialBarcode(state.currentMaterialId));
     });
   }
   if (inventoryMaterialScanBtn) {
@@ -1086,8 +1105,14 @@ function renderMaterials() {
     return;
   }
   materialTableBody.innerHTML = items
-    .map(
-      (material) => `
+    .map((material) => {
+      const barcodeLabel = material.barcode
+        ? `<span class="barcode-value">${escapeHtml(material.barcode)}</span>`
+        : `<span class="muted">-</span>`;
+      const barcodeAction = material.barcode
+        ? `<button class="small-button" data-action="print-barcode" data-id="${material.id}">Print</button>`
+        : "";
+      return `
         <tr data-id="${material.id}">
           <td>${escapeHtml(material.name)}</td>
           <td>${escapeHtml(material.brand || "")}</td>
@@ -1097,13 +1122,18 @@ function renderMaterials() {
           <td>$${material.price_per_gram.toFixed(2)}</td>
           <td>${material.spool_weight_grams}</td>
           <td>${escapeHtml(material.supplier || "")}</td>
-          <td>${escapeHtml(material.barcode || "")}</td>
+          <td>
+            <div class="barcode-cell">
+              ${barcodeLabel}
+              ${barcodeAction}
+            </div>
+          </td>
           <td>
             <button class="small-button" data-action="edit" data-id="${material.id}">Edit</button>
             <button class="small-button danger" data-action="delete" data-id="${material.id}">Delete</button>
           </td>
-        </tr>`
-    )
+        </tr>`;
+    })
     .join("");
 }
 
@@ -1980,6 +2010,8 @@ function handleMaterialRowClick(event) {
     startMaterialEdit(id);
   } else if (button.dataset.action === "delete") {
     deleteMaterial(id);
+  } else if (button.dataset.action === "print-barcode") {
+    safeAsync(() => printMaterialBarcode(id));
   }
 }
 
@@ -2670,6 +2702,173 @@ function closeBarcodeScanner({ silent = false } = {}) {
   if (!silent && scannerStatusEl) {
     scannerStatusEl.textContent = "Scanner closed.";
   }
+}
+
+async function generateMaterialBarcode({ force = false } = {}) {
+  if (!state.currentMaterialId) {
+    setMessage("Save the material before generating a barcode.", "error");
+    return;
+  }
+  const query = force ? "?force=true" : "";
+  const material = await api(`/materials/${state.currentMaterialId}/barcode${query}`, { method: "POST" });
+  await loadMaterials();
+  if (material && material.id) {
+    startMaterialEdit(material.id);
+  }
+  showToast("Barcode generated.", "success");
+}
+
+async function printMaterialBarcode(materialId) {
+  if (!materialId) {
+    setMessage("Select a material to print its barcode.", "error");
+    return;
+  }
+  let material = state.materials.find((item) => item.id === materialId);
+  if (!material) {
+    await loadMaterials();
+    material = state.materials.find((item) => item.id === materialId);
+  }
+  if (!material || !material.barcode) {
+    setMessage("Material barcode is missing. Generate one first.", "error");
+    return;
+  }
+  const labelLines = buildBarcodeLabelLines(material);
+  const barcodeUrl = `/materials/${material.id}/barcode?ts=${Date.now()}`;
+  openBarcodePrintWindow({
+    title: material.name,
+    barcodeUrl,
+    labelLines,
+    barcodeValue: material.barcode,
+  });
+}
+
+function buildBarcodeLabelLines(material) {
+  if (!material) return [];
+  const lines = [];
+  if (material.name) {
+    lines.push(material.name);
+  }
+  const detailParts = [];
+  if (material.filament_type) {
+    detailParts.push(material.filament_type);
+  }
+  if (material.color) {
+    detailParts.push(material.color);
+  }
+  const detail = detailParts.join(" / ");
+  if (detail) {
+    lines.push(detail);
+  }
+  return lines;
+}
+
+function openBarcodePrintWindow({ title, barcodeUrl, labelLines, barcodeValue }) {
+  const printWindow = window.open("", "_blank", "width=520,height=420");
+  if (!printWindow) {
+    setMessage("Allow popups to print barcode labels.", "error");
+    return;
+  }
+  const safeTitle = escapeHtml(title || "Barcode label");
+  const safeBarcode = escapeHtml(barcodeValue || "");
+  const safeLines = (labelLines || [])
+    .filter((line) => String(line || "").trim())
+    .map((line) => `<div class="label-line">${escapeHtml(line)}</div>`)
+    .join("");
+  const labelWidth = "2.25in";
+  const labelHeight = "1.25in";
+  const labelPadding = "0.08in";
+  const html = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>${safeTitle}</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100vw;
+        height: 100vh;
+        font-family: Arial, Helvetica, sans-serif;
+        color: #111;
+        background: #fff;
+      }
+      .label {
+        width: ${labelWidth};
+        height: ${labelHeight};
+        padding: ${labelPadding};
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.08in;
+      }
+      .label-text {
+        width: 100%;
+        text-align: center;
+        font-size: 0.12in;
+        font-weight: 600;
+        line-height: 1.1;
+      }
+      .label-line {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .label-barcode {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .label-barcode img {
+        max-width: 100%;
+        max-height: 0.55in;
+      }
+      .label-code {
+        font-size: 0.11in;
+        letter-spacing: 0.04em;
+      }
+      @media print {
+        @page {
+          size: ${labelWidth} ${labelHeight};
+          margin: 0;
+        }
+        body {
+          width: ${labelWidth};
+          height: ${labelHeight};
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="label">
+      <div class="label-text">${safeLines}</div>
+      <div class="label-barcode">
+        <img id="barcode-image" src="${barcodeUrl}" alt="Barcode ${safeBarcode}" />
+      </div>
+      <div class="label-code">${safeBarcode}</div>
+    </div>
+    <script>
+      const img = document.getElementById("barcode-image");
+      const triggerPrint = () => setTimeout(() => window.print(), 50);
+      if (img && !img.complete) {
+        img.addEventListener("load", triggerPrint);
+        img.addEventListener("error", triggerPrint);
+      } else {
+        triggerPrint();
+      }
+    </script>
+  </body>
+</html>`;
+  printWindow.document.open();
+  printWindow.document.write(html);
+  printWindow.document.close();
 }
 
 async function api(path, { method = "GET", body, headers } = {}) {

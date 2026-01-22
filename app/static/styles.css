@@ -557,6 +557,17 @@ label {
   min-width: 0;
 }
 
+.barcode-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.barcode-value {
+  font-weight: 600;
+}
+
 input,
 select,
 textarea,

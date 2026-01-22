@@ -10,12 +10,13 @@ from typing import List
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, func, select
 from starlette.middleware.sessions import SessionMiddleware
 
+from .barcodes import generate_material_barcode, render_barcode_png
 from .color_resolver import normalize_hex
 from .db import get_session, init_db
 from .filament_types import bambu_x1c_filament_types
@@ -227,6 +228,41 @@ def update_material(
     session.commit()
     session.refresh(material)
     return material
+
+
+@app.post("/materials/{material_id}/barcode", response_model=MaterialRead)
+def create_material_barcode(
+    material_id: int,
+    force: bool = False,
+    session: Session = Depends(get_session),
+    _: bool = Depends(require_auth),
+):
+    material = session.get(Material, material_id)
+    if not material:
+        raise HTTPException(status_code=404, detail="Material not found")
+    if material.barcode and not force:
+        return material
+    material.barcode = generate_material_barcode(session)
+    session.add(material)
+    session.commit()
+    session.refresh(material)
+    return material
+
+
+@app.get("/materials/{material_id}/barcode")
+def get_material_barcode(
+    material_id: int,
+    session: Session = Depends(get_session),
+    _: bool = Depends(require_auth),
+):
+    material = session.get(Material, material_id)
+    if not material:
+        raise HTTPException(status_code=404, detail="Material not found")
+    if not material.barcode:
+        raise HTTPException(status_code=404, detail="Material barcode not set")
+    png_bytes = render_barcode_png(material.barcode)
+    headers = {"Cache-Control": "no-store"}
+    return Response(content=png_bytes, media_type="image/png", headers=headers)
 
 
 @app.delete("/materials/{material_id}", status_code=status.HTTP_204_NO_CONTENT)
