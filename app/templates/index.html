@@ -19,117 +19,114 @@
     <link rel="apple-touch-icon" sizes="1024x1024" href="/public/favicon.png" />
   </head>
   <body>
-    <header class="app-header">
-      <div>
-        <span class="brand-chip" aria-hidden="true">MakerWorks v2</span>
-        <h1>StockWorks Inventory</h1>
-        <p>Manage filament materials, inventory, model sales, stock movements, and pricing.</p>
-      </div>
-      <div class="header-actions">
-        <button id="install-app" type="button" hidden>Install app</button>
-        <button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false" aria-label="Switch theme">
-          <span class="sr-only" data-theme-toggle-label>Switch to dark theme</span>
-          <svg class="theme-icon theme-icon-sun" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <path
-              d="M12 5.25a.75.75 0 0 1 .75-.75h.5a.75.75 0 0 1 0 1.5h-.5A.75.75 0 0 1 12 5.25Zm5.303 3.447a.75.75 0 0 1-.002-1.06l.354-.353a.75.75 0 0 1 1.06 1.062l-.353.353a.75.75 0 0 1-1.059-.002ZM18 12a6 6 0 1 1-6-6 6 6 0 0 1 6 6Zm-6 4.5a.75.75 0 0 0-.75.75v.5a.75.75 0 0 0 1.5 0v-.5A.75.75 0 0 0 12 16.5Zm7.5-.75h-.5a.75.75 0 0 0 0 1.5h.5a.75.75 0 0 0 0-1.5Zm-13 0H6a.75.75 0 0 0 0 1.5h.5a.75.75 0 0 0 0-1.5Zm-.803-6.053a.75.75 0 0 0 1.061 0l.353-.353a.75.75 0 1 0-1.06-1.062l-.354.353a.75.75 0 0 0 0 1.062ZM5.25 12a.75.75 0 0 0-.75-.75h-.5a.75.75 0 0 0 0 1.5h.5A.75.75 0 0 0 5.25 12Zm12.126 6.177a.75.75 0 0 0-1.06 1.06l.353.354a.75.75 0 0 0 1.062-1.06Z"
-            />
-          </svg>
-          <svg class="theme-icon theme-icon-moon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <path
-              d="M11.677 4.06a.75.75 0 0 1 .864-.153 7.5 7.5 0 1 1-3.428 14.293.75.75 0 0 1-.321-1.103 5.5 5.5 0 0 0 2.795-8.46.75.75 0 0 1 .09-.978Z"
-            />
-          </svg>
-        </button>
-        <button id="refresh-all" type="button">Refresh all data</button>
-        <form method="post" action="/logout">
-          <button type="submit">Sign out</button>
-        </form>
-      </div>
-    </header>
-
     <main class="app-grid">
+      <nav class="tab-nav" aria-label="Inventory sections">
+        <div class="tab-nav-top">
+          <h1 class="nav-title">StockWorks</h1>
+          <div class="header-actions">
+            <button id="install-app" type="button" hidden>Install app</button>
+            <button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false" aria-label="Switch theme">
+              <span class="sr-only" data-theme-toggle-label>Switch to dark theme</span>
+              <svg class="theme-icon theme-icon-sun" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path
+                  d="M12 5.25a.75.75 0 0 1 .75-.75h.5a.75.75 0 0 1 0 1.5h-.5A.75.75 0 0 1 12 5.25Zm5.303 3.447a.75.75 0 0 1-.002-1.06l.354-.353a.75.75 0 0 1 1.06 1.062l-.353.353a.75.75 0 0 1-1.059-.002ZM18 12a6 6 0 1 1-6-6 6 6 0 0 1 6 6Zm-6 4.5a.75.75 0 0 0-.75.75v.5a.75.75 0 0 0 1.5 0v-.5A.75.75 0 0 0 12 16.5Zm7.5-.75h-.5a.75.75 0 0 0 0 1.5h.5a.75.75 0 0 0 0-1.5Zm-13 0H6a.75.75 0 0 0 0 1.5h.5a.75.75 0 0 0 0-1.5Zm-.803-6.053a.75.75 0 0 0 1.061 0l.353-.353a.75.75 0 1 0-1.06-1.062l-.354.353a.75.75 0 0 0 0 1.062ZM5.25 12a.75.75 0 0 0-.75-.75h-.5a.75.75 0 0 0 0 1.5h.5A.75.75 0 0 0 5.25 12Zm12.126 6.177a.75.75 0 0 0-1.06 1.06l.353.354a.75.75 0 0 0 1.062-1.06Z"
+                />
+              </svg>
+              <svg class="theme-icon theme-icon-moon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path
+                  d="M11.677 4.06a.75.75 0 0 1 .864-.153 7.5 7.5 0 1 1-3.428 14.293.75.75 0 0 1-.321-1.103 5.5 5.5 0 0 0 2.795-8.46.75.75 0 0 1 .09-.978Z"
+                />
+              </svg>
+            </button>
+            <button id="refresh-all" type="button">Refresh all data</button>
+            <form method="post" action="/logout">
+              <button type="submit">Sign out</button>
+            </form>
+          </div>
+        </div>
+        <div class="tab-nav-tabs" role="tablist">
+          <button
+            class="tab-button active"
+            id="tab-materials"
+            type="button"
+            role="tab"
+            aria-selected="true"
+            aria-controls="materials-panel"
+            data-tab-target="materials-panel"
+          >
+            Materials
+          </button>
+          <button
+            class="tab-button"
+            id="tab-inventory"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            aria-controls="inventory-panel"
+            data-tab-target="inventory-panel"
+          >
+            Inventory
+          </button>
+          <button
+            class="tab-button"
+            id="tab-models"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            aria-controls="models-panel"
+            data-tab-target="models-panel"
+          >
+            Models
+          </button>
+          <button
+            class="tab-button"
+            id="tab-hardware"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            aria-controls="hardware-panel"
+            data-tab-target="hardware-panel"
+          >
+            Hardware
+          </button>
+          <button
+            class="tab-button"
+            id="tab-movements"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            aria-controls="movement-panel"
+            data-tab-target="movement-panel"
+          >
+            Stock Movements
+          </button>
+          <button
+            class="tab-button"
+            id="tab-orderworks"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            aria-controls="orderworks-panel"
+            data-tab-target="orderworks-panel"
+          >
+            Orders
+          </button>
+          <button
+            class="tab-button"
+            id="tab-reports"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            aria-controls="reports-panel"
+            data-tab-target="reports-panel"
+          >
+            Reports
+          </button>
+        </div>
+      </nav>
+
       <div id="message" class="message" role="status" aria-live="polite"></div>
       <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
-
-      <nav class="tab-nav" role="tablist" aria-label="Inventory sections">
-        <button
-          class="tab-button active"
-          id="tab-materials"
-          type="button"
-          role="tab"
-          aria-selected="true"
-          aria-controls="materials-panel"
-          data-tab-target="materials-panel"
-        >
-          Materials
-        </button>
-        <button
-          class="tab-button"
-          id="tab-inventory"
-          type="button"
-          role="tab"
-          aria-selected="false"
-          aria-controls="inventory-panel"
-          data-tab-target="inventory-panel"
-        >
-          Inventory
-        </button>
-        <button
-          class="tab-button"
-          id="tab-models"
-          type="button"
-          role="tab"
-          aria-selected="false"
-          aria-controls="models-panel"
-          data-tab-target="models-panel"
-        >
-          Models
-        </button>
-        <button
-          class="tab-button"
-          id="tab-hardware"
-          type="button"
-          role="tab"
-          aria-selected="false"
-          aria-controls="hardware-panel"
-          data-tab-target="hardware-panel"
-        >
-          Hardware
-        </button>
-        <button
-          class="tab-button"
-          id="tab-movements"
-          type="button"
-          role="tab"
-          aria-selected="false"
-          aria-controls="movement-panel"
-          data-tab-target="movement-panel"
-        >
-          Stock Movements
-        </button>
-        <button
-          class="tab-button"
-          id="tab-orderworks"
-          type="button"
-          role="tab"
-          aria-selected="false"
-          aria-controls="orderworks-panel"
-          data-tab-target="orderworks-panel"
-        >
-          Orders
-        </button>
-        <button
-          class="tab-button"
-          id="tab-reports"
-          type="button"
-          role="tab"
-          aria-selected="false"
-          aria-controls="reports-panel"
-          data-tab-target="reports-panel"
-        >
-          Reports
-        </button>
-      </nav>
 
       <div class="tab-panels">
         <section class="card tab-panel active" id="materials-panel" role="tabpanel" aria-labelledby="tab-materials">
