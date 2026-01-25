@@ -199,44 +199,20 @@
               Search
               <input type="search" id="materials-search" placeholder="Search materials..." />
             </label>
-            <label class="table-control">
-              Brand
-              <select id="materials-brand-filter">
-                <option value="all">All brands</option>
-              </select>
-            </label>
-            <label class="table-control">
-              Type
-              <select id="materials-type-filter">
-                <option value="all">All types</option>
-              </select>
-            </label>
-            <label class="table-control">
-              Category
-              <select id="materials-category-filter">
-                <option value="all">All categories</option>
-              </select>
-            </label>
-            <label class="table-control">
-              Color
-              <select id="materials-color-filter">
-                <option value="all">All colors</option>
-              </select>
-            </label>
           </div>
           <div class="table-wrapper">
             <table id="materials-table">
               <thead>
                 <tr>
-                  <th>Name</th>
-                  <th>Brand</th>
-                  <th>Type</th>
-                  <th>Category</th>
-                  <th>Color / Hex</th>
-                  <th>Price/g</th>
-                  <th>Spool (g)</th>
-                  <th>Supplier</th>
-                  <th>Barcode</th>
+                  <th class="sortable" data-sort-key="name" aria-sort="none">Name</th>
+                  <th class="sortable" data-sort-key="brand" aria-sort="none">Brand</th>
+                  <th class="sortable" data-sort-key="filament_type" aria-sort="none">Type</th>
+                  <th class="sortable" data-sort-key="category" aria-sort="none">Category</th>
+                  <th class="sortable" data-sort-key="color" aria-sort="none">Color / Hex</th>
+                  <th class="sortable" data-sort-key="price_per_gram" aria-sort="none">Price/g</th>
+                  <th class="sortable" data-sort-key="spool_weight_grams" aria-sort="none">Spool (g)</th>
+                  <th class="sortable" data-sort-key="supplier" aria-sort="none">Supplier</th>
+                  <th class="sortable" data-sort-key="barcode" aria-sort="none">Barcode</th>
                   <th></th>
                 </tr>
               </thead>
@@ -303,10 +279,6 @@
             </div>
           </form>
           <div class="table-controls" id="inventory-controls">
-            <label class="table-control">
-              Search
-              <input type="search" id="inventory-search" placeholder="Search inventory..." />
-            </label>
             <label class="table-control">
               Material
               <select id="inventory-material-filter">
@@ -418,10 +390,6 @@
             </form>
             <div>
               <div class="table-controls" id="models-controls">
-                <label class="table-control">
-                  Search
-                  <input type="search" id="models-search" placeholder="Search models..." />
-                </label>
                 <label class="table-control">
                   Filter
                   <select id="models-filter">
@@ -578,10 +546,6 @@
             </form>
             <div class="table-controls" id="hardware-controls">
               <label class="table-control">
-                Search
-                <input type="search" id="hardware-search" placeholder="Search hardware..." />
-              </label>
-              <label class="table-control">
                 Filter
                 <select id="hardware-filter">
                   <option value="all">All hardware</option>
@@ -706,10 +670,6 @@
             <button type="submit">Log movement</button>
           </form>
           <div class="table-controls" id="movement-controls">
-            <label class="table-control">
-              Search
-              <input type="search" id="movements-search" placeholder="Search reference or note..." />
-            </label>
             <label class="table-control">
               Type
               <select id="movements-filter">

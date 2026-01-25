@@ -45,10 +45,9 @@ const materialColorDot = document.getElementById("material-color-dot");
 const materialColorPicker = document.getElementById("material-color-picker");
 const materialTableBody = document.querySelector("#materials-table tbody");
 const materialSearchInput = document.getElementById("materials-search");
-const materialBrandFilter = document.getElementById("materials-brand-filter");
-const materialTypeFilter = document.getElementById("materials-type-filter");
-const materialCategoryFilter = document.getElementById("materials-category-filter");
-const materialColorFilter = document.getElementById("materials-color-filter");
+const materialSortHeaders = Array.from(
+  document.querySelectorAll("#materials-table thead th[data-sort-key]")
+);
 const materialClearBtn = document.getElementById("material-clear");
 const materialRefreshBtn = document.getElementById("material-refresh");
 const materialDeleteBtn = document.getElementById("material-delete");
@@ -69,7 +68,6 @@ const inventoryFields = {
   unit_cost_override: document.getElementById("inventory-cost"),
 };
 const inventoryTableBody = document.querySelector("#inventory-table tbody");
-const inventorySearchInput = document.getElementById("inventory-search");
 const inventoryMaterialFilter = document.getElementById("inventory-material-filter");
 const inventoryColorFilter = document.getElementById("inventory-color-filter");
 const inventoryLocationFilter = document.getElementById("inventory-location-filter");
@@ -112,7 +110,6 @@ const hardwareFields = {
   notes: document.getElementById("hardware-notes"),
 };
 const hardwareTableBody = document.querySelector("#hardware-table tbody");
-const hardwareSearchInput = document.getElementById("hardware-search");
 const hardwareFilterSelect = document.getElementById("hardware-filter");
 const hardwareClearBtn = document.getElementById("hardware-clear");
 const hardwareRefreshBtn = document.getElementById("hardware-refresh");
@@ -134,7 +131,6 @@ const modelFields = {
   notes: document.getElementById("model-notes"),
 };
 const modelsTableBody = document.querySelector("#models-table tbody");
-const modelsSearchInput = document.getElementById("models-search");
 const modelsFilterSelect = document.getElementById("models-filter");
 const modelsClearBtn = document.getElementById("models-clear");
 const modelsRefreshBtn = document.getElementById("models-refresh");
@@ -158,7 +154,6 @@ const movementChangeInput = document.getElementById("movement-change");
 const movementReferenceInput = document.getElementById("movement-reference");
 const movementNoteInput = document.getElementById("movement-note");
 const movementTableBody = document.querySelector("#movement-table tbody");
-const movementSearchInput = document.getElementById("movements-search");
 const movementFilterSelect = document.getElementById("movements-filter");
 
 const hardwareMovementForm = document.getElementById("hardware-movement-form");
@@ -201,11 +196,15 @@ const paginationState = {
 };
 
 const filterState = {
-  materials: { search: "", brand: "all", type: "all", category: "all", color: "all" },
-  inventory: { search: "", material: "all", color: "all", location: "all" },
-  models: { search: "", mode: "all" },
-  hardware: { search: "", mode: "all" },
-  movements: { search: "", mode: "all" },
+  materials: { search: "" },
+  inventory: { material: "all", color: "all", location: "all" },
+  models: { mode: "all" },
+  hardware: { mode: "all" },
+  movements: { mode: "all" },
+};
+
+const sortState = {
+  materials: { key: "name", direction: "asc" },
 };
 
 const DEFAULT_BARCODE_FORMATS = [
@@ -412,40 +411,25 @@ function bindEvents() {
       renderMaterials();
     });
   }
-  if (materialBrandFilter) {
-    materialBrandFilter.addEventListener("change", () => {
-      filterState.materials.brand = normalizeSearchTerm(materialBrandFilter.value) || "all";
-      paginationState.materials.page = 1;
-      renderMaterials();
+  if (materialSortHeaders.length) {
+    materialSortHeaders.forEach((header) => {
+      header.addEventListener("click", () => {
+        const key = header.dataset.sortKey;
+        if (!key) {
+          return;
+        }
+        if (sortState.materials.key !== key) {
+          sortState.materials.key = key;
+          sortState.materials.direction = "asc";
+        } else {
+          sortState.materials.direction = sortState.materials.direction === "asc" ? "desc" : "asc";
+        }
+        paginationState.materials.page = 1;
+        updateMaterialSortHeaders();
+        renderMaterials();
+      });
     });
-  }
-  if (materialTypeFilter) {
-    materialTypeFilter.addEventListener("change", () => {
-      filterState.materials.type = normalizeSearchTerm(materialTypeFilter.value) || "all";
-      paginationState.materials.page = 1;
-      renderMaterials();
-    });
-  }
-  if (materialCategoryFilter) {
-    materialCategoryFilter.addEventListener("change", () => {
-      filterState.materials.category = normalizeSearchTerm(materialCategoryFilter.value) || "all";
-      paginationState.materials.page = 1;
-      renderMaterials();
-    });
-  }
-  if (materialColorFilter) {
-    materialColorFilter.addEventListener("change", () => {
-      filterState.materials.color = normalizeSearchTerm(materialColorFilter.value) || "all";
-      paginationState.materials.page = 1;
-      renderMaterials();
-    });
-  }
-  if (inventorySearchInput) {
-    inventorySearchInput.addEventListener("input", () => {
-      filterState.inventory.search = normalizeSearchTerm(inventorySearchInput.value);
-      paginationState.inventory.page = 1;
-      renderInventory();
-    });
+    updateMaterialSortHeaders();
   }
   if (inventoryMaterialFilter) {
     inventoryMaterialFilter.addEventListener("change", () => {
@@ -468,13 +452,6 @@ function bindEvents() {
       renderInventory();
     });
   }
-  if (modelsSearchInput) {
-    modelsSearchInput.addEventListener("input", () => {
-      filterState.models.search = normalizeSearchTerm(modelsSearchInput.value);
-      paginationState.models.page = 1;
-      renderModels();
-    });
-  }
   if (modelsFilterSelect) {
     modelsFilterSelect.addEventListener("change", () => {
       filterState.models.mode = modelsFilterSelect.value || "all";
@@ -482,24 +459,11 @@ function bindEvents() {
       renderModels();
     });
   }
-  if (hardwareSearchInput) {
-    hardwareSearchInput.addEventListener("input", () => {
-      filterState.hardware.search = normalizeSearchTerm(hardwareSearchInput.value);
-      paginationState.hardware.page = 1;
-      renderHardware();
-    });
-  }
   if (hardwareFilterSelect) {
     hardwareFilterSelect.addEventListener("change", () => {
       filterState.hardware.mode = hardwareFilterSelect.value || "all";
       paginationState.hardware.page = 1;
       renderHardware();
-    });
-  }
-  if (movementSearchInput) {
-    movementSearchInput.addEventListener("input", () => {
-      filterState.movements.search = normalizeSearchTerm(movementSearchInput.value);
-      renderMovements(state.lastInventoryMovements);
     });
   }
   if (movementFilterSelect) {
@@ -724,7 +688,6 @@ async function refreshReports() {
 async function loadMaterials() {
   const materials = await api("/materials");
   state.materials = materials;
-  populateMaterialFilters();
   renderMaterials();
   populateMaterialOptions();
   if (state.currentMaterialId && !materials.some((m) => m.id === state.currentMaterialId)) {
@@ -872,58 +835,106 @@ function matchesSearch(needle, values) {
 
 function filterMaterials(items) {
   const search = filterState.materials.search;
-  const brand = filterState.materials.brand;
-  const type = filterState.materials.type;
-  const category = filterState.materials.category;
-  const color = filterState.materials.color;
-  let filtered = items;
-  if (search) {
-    filtered = filtered.filter((material) =>
-      matchesSearch(search, [
-        material.name,
-        material.brand,
-        material.filament_type,
-        material.category,
-        material.color,
-        material.color_hex,
-        material.supplier,
-        material.barcode,
-        material.notes,
-      ])
-    );
+  if (!search) {
+    return items;
   }
-  if (brand !== "all") {
-    filtered = filtered.filter((material) => normalizeSearchTerm(material.brand) === brand);
+  return items.filter((material) =>
+    matchesSearch(search, [
+      material.name,
+      material.brand,
+      material.filament_type,
+      material.category,
+      material.color,
+      material.color_hex,
+      material.supplier,
+      material.barcode,
+      material.notes,
+    ])
+  );
+}
+
+function compareText(a, b) {
+  return String(a || "").localeCompare(String(b || ""), undefined, {
+    numeric: true,
+    sensitivity: "base",
+  });
+}
+
+function getMaterialSortValue(material, key) {
+  switch (key) {
+    case "price_per_gram":
+      return Number(material.price_per_gram || 0);
+    case "spool_weight_grams":
+      return Number(material.spool_weight_grams || 0);
+    case "filament_type":
+      return material.filament_type;
+    case "name":
+      return material.name;
+    case "brand":
+      return material.brand;
+    case "category":
+      return material.category;
+    case "color":
+      return material.color;
+    case "supplier":
+      return material.supplier;
+    case "barcode":
+      return material.barcode;
+    default:
+      return material[key];
   }
-  if (type !== "all") {
-    filtered = filtered.filter((material) => normalizeSearchTerm(material.filament_type) === type);
+}
+
+function sortMaterials(items) {
+  const { key, direction } = sortState.materials;
+  if (!key) {
+    return items;
   }
-  if (category !== "all") {
-    filtered = filtered.filter((material) => normalizeSearchTerm(material.category) === category);
+  const directionFactor = direction === "desc" ? -1 : 1;
+  const sorted = [...items];
+  sorted.sort((a, b) => {
+    const aValue = getMaterialSortValue(a, key);
+    const bValue = getMaterialSortValue(b, key);
+    let comparison = 0;
+    if (typeof aValue === "number" && typeof bValue === "number") {
+      comparison = aValue - bValue;
+    } else {
+      comparison = compareText(aValue, bValue);
+    }
+    if (comparison !== 0) {
+      return comparison * directionFactor;
+    }
+    return compareText(a.name, b.name) * directionFactor;
+  });
+  return sorted;
+}
+
+function updateMaterialSortHeaders() {
+  if (!materialSortHeaders.length) {
+    return;
   }
-  if (color !== "all") {
-    filtered = filtered.filter((material) => normalizeSearchTerm(material.color) === color);
-  }
-  return filtered;
+  materialSortHeaders.forEach((header) => {
+    header.classList.remove("sort-asc", "sort-desc");
+    header.setAttribute("aria-sort", "none");
+    const key = header.dataset.sortKey;
+    if (!key || key !== sortState.materials.key) {
+      return;
+    }
+    if (sortState.materials.direction === "desc") {
+      header.classList.add("sort-desc");
+      header.setAttribute("aria-sort", "descending");
+    } else {
+      header.classList.add("sort-asc");
+      header.setAttribute("aria-sort", "ascending");
+    }
+  });
 }
 
 function filterInventory(items) {
-  const search = filterState.inventory.search;
   const material = filterState.inventory.material;
   const color = filterState.inventory.color;
   const location = filterState.inventory.location;
   let filtered = items;
-  if (search) {
-    filtered = filtered.filter((item) =>
-      matchesSearch(search, [
-        item.material?.name,
-        item.material?.color,
-        item.material?.barcode,
-        item.location,
-        item.spool_serial,
-      ])
-    );
-  }
   if (material !== "all") {
     filtered = filtered.filter((item) => normalizeSearchTerm(item.material?.name) === material);
   }
@@ -937,23 +948,8 @@ function filterInventory(items) {
 }
 
 function filterModels(items) {
-  const search = filterState.models.search;
   const mode = filterState.models.mode;
   let filtered = items;
-  if (search) {
-    filtered = filtered.filter((model) =>
-      matchesSearch(search, [
-        model.name,
-        model.category,
-        model.sku,
-        model.designer,
-        model.platform,
-        model.file_location,
-        model.version,
-        model.notes,
-      ])
-    );
-  }
   if (mode === "active") {
     filtered = filtered.filter((model) => model.active);
   } else if (mode === "inactive") {
@@ -963,22 +959,8 @@ function filterModels(items) {
 }
 
 function filterHardware(items) {
-  const search = filterState.hardware.search;
   const mode = filterState.hardware.mode;
   let filtered = items;
-  if (search) {
-    filtered = filtered.filter((item) =>
-      matchesSearch(search, [
-        item.name,
-        item.category,
-        item.supplier,
-        item.manufacturer_part_number,
-        item.unit_of_measure,
-        item.bin_location,
-        item.notes,
-      ])
-    );
-  }
   if (mode === "below-reorder") {
     filtered = filtered.filter((item) => {
       const reorder = Number(item.reorder_level || 0);
@@ -992,16 +974,10 @@ function filterHardware(items) {
 }
 
 function filterMovements(movements) {
-  const search = filterState.movements.search;
   const mode = filterState.movements.mode;
   let filtered = movements;
   if (mode !== "all") {
     filtered = filtered.filter((move) => move.movement_type === mode);
-  }
-  if (search) {
-    filtered = filtered.filter((move) =>
-      matchesSearch(search, [move.movement_type, move.reference, move.note, move.change_grams])
-    );
   }
   return filtered;
 }
@@ -1019,38 +995,6 @@ function buildFilterOptions(items) {
   return Array.from(unique.entries())
     .map(([value, label]) => ({ value, label }))
     .sort((a, b) => a.label.localeCompare(b.label));
-}
-
-function populateMaterialFilters() {
-  if (!materialBrandFilter || !materialTypeFilter || !materialCategoryFilter || !materialColorFilter) {
-    return;
-  }
-  const brands = buildFilterOptions(state.materials.map((material) => material.brand));
-  const types = buildFilterOptions(state.materials.map((material) => material.filament_type));
-  const categories = buildFilterOptions(state.materials.map((material) => material.category));
-  const colors = buildFilterOptions(state.materials.map((material) => material.color));
-
-  const setOptions = (select, values, allLabel, currentValue) => {
-    const options = [`<option value="all">${allLabel}</option>`]
-      .concat(values.map((item) => `<option value="${escapeHtml(item.value)}">${escapeHtml(item.label)}</option>`))
-      .join("");
-    select.innerHTML = options;
-    if (values.some((item) => item.value === currentValue)) {
-      select.value = currentValue;
-    } else {
-      select.value = "all";
-    }
-  };
-
-  setOptions(materialBrandFilter, brands, "All brands", filterState.materials.brand);
-  setOptions(materialTypeFilter, types, "All types", filterState.materials.type);
-  setOptions(materialCategoryFilter, categories, "All categories", filterState.materials.category);
-  setOptions(materialColorFilter, colors, "All colors", filterState.materials.color);
-
-  filterState.materials.brand = materialBrandFilter.value || "all";
-  filterState.materials.type = materialTypeFilter.value || "all";
-  filterState.materials.category = materialCategoryFilter.value || "all";
-  filterState.materials.color = materialColorFilter.value || "all";
 }
 
 function populateInventoryFilters() {
@@ -1084,7 +1028,8 @@ function populateInventoryFilters() {
 
 function renderMaterials() {
   const filtered = filterMaterials(state.materials);
-  const { items, total, startIndex, endIndex, maxPage } = paginate(filtered, paginationState.materials);
+  const sorted = sortMaterials(filtered);
+  const { items, total, startIndex, endIndex, maxPage } = paginate(sorted, paginationState.materials);
   updatePaginationControls({
     total,
     startIndex,

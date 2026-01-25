@@ -911,6 +911,19 @@ thead {
   color: var(--sap-text-muted);
 }
 
+th.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+th.sortable.sort-asc::after {
+  content: " ▲";
+}
+
+th.sortable.sort-desc::after {
+  content: " ▼";
+}
+
 th,
 td {
   padding: 0.65rem 0.95rem;
