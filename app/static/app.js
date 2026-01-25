@@ -45,9 +45,7 @@ const materialColorDot = document.getElementById("material-color-dot");
 const materialColorPicker = document.getElementById("material-color-picker");
 const materialTableBody = document.querySelector("#materials-table tbody");
 const materialSearchInput = document.getElementById("materials-search");
-const materialSortHeaders = Array.from(
-  document.querySelectorAll("#materials-table thead th[data-sort-key]")
-);
+let materialSortHeaders = [];
 const materialClearBtn = document.getElementById("material-clear");
 const materialRefreshBtn = document.getElementById("material-refresh");
 const materialDeleteBtn = document.getElementById("material-delete");
@@ -411,6 +409,9 @@ function bindEvents() {
       renderMaterials();
     });
   }
+  materialSortHeaders = Array.from(
+    document.querySelectorAll("#materials-table thead th[data-sort-key]")
+  );
   if (materialSortHeaders.length) {
     const handleMaterialSort = (key) => {
       if (!key) {
@@ -626,10 +627,20 @@ function registerServiceWorker() {
     return;
   }
 
+  let hasRefreshedForNewWorker = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (hasRefreshedForNewWorker) {
+      return;
+    }
+    hasRefreshedForNewWorker = true;
+    window.location.reload();
+  });
+
   navigator.serviceWorker
     .register("/sw.js")
     .then((registration) => {
       console.info("Service worker registered:", registration.scope);
+      registration.update().catch(() => null);
     })
     .catch((error) => {
       console.error("Service worker registration failed:", error);
