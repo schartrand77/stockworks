@@ -412,22 +412,31 @@ function bindEvents() {
     });
   }
   if (materialSortHeaders.length) {
+    const handleMaterialSort = (key) => {
+      if (!key) {
+        return;
+      }
+      if (sortState.materials.key !== key) {
+        sortState.materials.key = key;
+        sortState.materials.direction = "asc";
+      } else {
+        sortState.materials.direction = sortState.materials.direction === "asc" ? "desc" : "asc";
+      }
+      paginationState.materials.page = 1;
+      updateMaterialSortHeaders();
+      renderMaterials();
+    };
     materialSortHeaders.forEach((header) => {
-      header.addEventListener("click", () => {
-        const key = header.dataset.sortKey;
-        if (!key) {
-          return;
-        }
-        if (sortState.materials.key !== key) {
-          sortState.materials.key = key;
-          sortState.materials.direction = "asc";
-        } else {
-          sortState.materials.direction = sortState.materials.direction === "asc" ? "desc" : "asc";
-        }
-        paginationState.materials.page = 1;
-        updateMaterialSortHeaders();
-        renderMaterials();
-      });
+      const key = header.dataset.sortKey;
+      header.addEventListener("click", () => handleMaterialSort(key));
+      header.addEventListener(
+        "touchend",
+        (event) => {
+          event.preventDefault();
+          handleMaterialSort(key);
+        },
+        { passive: false }
+      );
     });
     updateMaterialSortHeaders();
   }

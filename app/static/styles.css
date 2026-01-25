@@ -914,14 +914,16 @@ thead {
 th.sortable {
   cursor: pointer;
   user-select: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 th.sortable.sort-asc::after {
-  content: " ▲";
+  content: " \25B2";
 }
 
 th.sortable.sort-desc::after {
-  content: " ▼";
+  content: " \25BC";
 }
 
 th,
@@ -1106,3 +1108,4 @@ th:last-child {
     transition: none !important;
   }
 }
+
