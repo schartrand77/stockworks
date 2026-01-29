@@ -277,6 +277,31 @@ body::after {
   font-weight: 600;
   letter-spacing: 0.01em;
   line-height: 1.1;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0;
+}
+
+.nav-title .gear {
+  display: inline-block;
+  align-self: center;
+  color: var(--sap-primary);
+  font-size: 0.95em;
+  transform-origin: 50% 50%;
+  animation-name: sw-gear-spin;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  will-change: transform;
+  margin: 0 -0.14em;
+}
+
+@keyframes sw-gear-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .tab-nav-tabs {
