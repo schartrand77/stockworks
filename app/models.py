@@ -48,7 +48,7 @@ class MaterialRead(MaterialBase):
 
 
 class MaterialCostHistoryBase(SQLModel):
-    material_id: int
+    material_id: int = Field(foreign_key="material.id")
     unit_cost_per_gram: float = Field(gt=0, description="Recorded material cost per gram")
     vendor: Optional[str] = None
     reference: Optional[str] = Field(default=None, description="PO, invoice, or receipt reference")
