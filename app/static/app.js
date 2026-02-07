@@ -52,6 +52,7 @@ const materialDeleteBtn = document.getElementById("material-delete");
 const materialBarcodeScanBtn = document.getElementById("material-barcode-scan");
 const materialBarcodeGenerateBtn = document.getElementById("material-barcode-generate");
 const materialBarcodePrintBtn = document.getElementById("material-barcode-print");
+const materialCostHistoryList = document.getElementById("material-cost-history-list");
 const filamentTypeDatalist = document.getElementById("filament-type-list");
 
 // Inventory references
@@ -1819,10 +1820,13 @@ async function handleMaterialSubmit(event) {
     } else {
       saved = await api("/materials", { method: "POST", body: payload });
     }
-    await loadMaterials();
-    if (!state.currentMaterialId && saved && saved.name && saved.name !== payload.name) {
-      setMessage(`Duplicate filament name detected. Saved as "${saved.name}".`, "info");
-    } else {
+      await loadMaterials();
+      if (state.currentMaterialId) {
+        loadMaterialCostHistory(state.currentMaterialId);
+      }
+      if (!state.currentMaterialId && saved && saved.name && saved.name !== payload.name) {
+        setMessage(`Duplicate filament name detected. Saved as "${saved.name}".`, "info");
+      } else {
       showToast("Material saved.", "success");
     }
   } catch (error) {
@@ -2033,6 +2037,7 @@ function startMaterialEdit(id) {
   materialFields.notes.value = material.notes || "";
   updateMaterialColorRequirement();
   syncMaterialColorInputs({ source: "text" });
+  loadMaterialCostHistory(id);
 }
 
 function startInventoryEdit(id) {
@@ -2204,7 +2209,7 @@ function buildMaterialPayload() {
     brand: optionalString(materialFields.brand.value),
     price_per_gram: price,
     spool_weight_grams: Math.round(spool),
-    barcode: optionalString(materialFields.barcode.value),
+    barcode: optionalString(normalizeBarcode(materialFields.barcode.value)),
     notes: optionalString(materialFields.notes.value),
   };
 }
@@ -2246,7 +2251,7 @@ function buildInventoryPayload() {
     location,
     quantity_grams: quantity,
     reorder_level: reorder,
-    spool_serial: optionalString(inventoryFields.spool_serial.value),
+    spool_serial: optionalString(normalizeBarcode(inventoryFields.spool_serial.value)),
     unit_cost_override: unitCost,
   };
 }
@@ -2301,7 +2306,7 @@ function buildModelPayload() {
   return {
     name,
     category: optionalString(modelFields.category.value),
-    sku: optionalString(modelFields.sku.value),
+    sku: optionalString(normalizeSku(modelFields.sku.value)),
     designer: optionalString(modelFields.designer.value),
     platform: optionalString(modelFields.platform.value),
     file_location: optionalString(modelFields.file_location.value),
@@ -2318,6 +2323,7 @@ function resetMaterialForm() {
   state.currentMaterialId = null;
   updateMaterialColorRequirement();
   syncMaterialColorInputs({ source: "text" });
+  loadMaterialCostHistory(null);
 }
 
 function resetInventoryForm() {
@@ -2518,7 +2524,46 @@ function changePage(section, delta) {
 }
 
 function normalizeBarcode(value) {
-  return String(value || "").trim();
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  return raw.replace(/[\s-]+/g, "").toUpperCase();
+}
+
+async function loadMaterialCostHistory(materialId) {
+  if (!materialCostHistoryList) return;
+  if (!materialId) {
+    materialCostHistoryList.textContent = "Select a material to view history.";
+    return;
+  }
+  try {
+    const entries = await api(`/materials/${materialId}/cost-history`);
+    if (!Array.isArray(entries) || entries.length === 0) {
+      materialCostHistoryList.textContent = "No cost history recorded yet.";
+      return;
+    }
+    materialCostHistoryList.innerHTML = entries
+      .slice(0, 8)
+      .map((entry) => {
+        const when = entry.recorded_at ? new Date(entry.recorded_at).toLocaleString() : "Unknown date";
+        const vendor = entry.vendor ? ` · ${escapeHtml(entry.vendor)}` : "";
+        const ref = entry.reference ? ` (${escapeHtml(entry.reference)})` : "";
+        return `<div>${when} · $${Number(entry.unit_cost_per_gram).toFixed(4)}/g${vendor}${ref}</div>`;
+      })
+      .join("");
+  } catch (err) {
+    materialCostHistoryList.textContent = "Unable to load cost history.";
+  }
+}
+
+function normalizeSku(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  return raw
+    .replace(/\s+/g, "-")
+    .toUpperCase()
+    .replace(/[^A-Z0-9._-]+/g, "")
+    .replace(/-{2,}/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
 function findMaterialByBarcode(barcode) {

@@ -20,6 +20,7 @@ from .barcodes import generate_material_barcode, render_barcode_png
 from .color_resolver import normalize_hex
 from .db import get_session, init_db
 from .filament_types import bambu_x1c_filament_types
+from .normalization import normalize_barcode, normalize_sku
 from .orderworks import (
     OrderWorksAuthenticationError,
     OrderWorksDatabaseUnavailableError,
@@ -44,6 +45,9 @@ from .models import (
     MaterialCreate,
     MaterialRead,
     MaterialUpdate,
+    MaterialCostHistory,
+    MaterialCostHistoryCreate,
+    MaterialCostHistoryRead,
     PricingBreakdown,
     PricingRequest,
     PricingResponse,
@@ -186,11 +190,21 @@ def create_material(
 ):
     data = payload.dict()
     data["color_hex"] = normalize_hex(data.get("color_hex"))
+    data["barcode"] = normalize_barcode(data.get("barcode"))
     data["name"] = _ensure_unique_material_name(session, data["name"])
     material = Material(**data)
     session.add(material)
     session.commit()
     session.refresh(material)
+    history = MaterialCostHistory(
+        material_id=material.id,
+        unit_cost_per_gram=material.price_per_gram,
+        vendor=material.supplier,
+        reference="material_create",
+        note="Initial material cost",
+    )
+    session.add(history)
+    session.commit()
     return material
 
 
@@ -218,16 +232,63 @@ def update_material(
     material = session.get(Material, material_id)
     if not material:
         raise HTTPException(status_code=404, detail="Material not found")
+    previous_price = material.price_per_gram
+    previous_supplier = material.supplier
     update_data = payload.dict(exclude_unset=True)
     if {"brand", "color", "color_hex"} & update_data.keys():
         color_hex = update_data.get("color_hex", material.color_hex)
         update_data["color_hex"] = normalize_hex(color_hex)
+    if "barcode" in update_data:
+        update_data["barcode"] = normalize_barcode(update_data.get("barcode"))
     for key, value in update_data.items():
         setattr(material, key, value)
     session.add(material)
     session.commit()
     session.refresh(material)
+    if payload.price_per_gram is not None and payload.price_per_gram != previous_price:
+        history = MaterialCostHistory(
+            material_id=material.id,
+            unit_cost_per_gram=material.price_per_gram,
+            vendor=payload.supplier if payload.supplier is not None else previous_supplier,
+            reference="material_update",
+            note="Price updated",
+        )
+        session.add(history)
+        session.commit()
     return material
+
+
+@app.get("/materials/{material_id}/cost-history", response_model=List[MaterialCostHistoryRead])
+def list_material_cost_history(
+    material_id: int,
+    session: Session = Depends(get_session),
+    _: bool = Depends(require_auth),
+):
+    if not session.get(Material, material_id):
+        raise HTTPException(status_code=404, detail="Material not found")
+    statement = select(MaterialCostHistory).where(MaterialCostHistory.material_id == material_id).order_by(
+        MaterialCostHistory.recorded_at.desc()
+    )
+    return session.exec(statement).all()
+
+
+@app.post("/materials/{material_id}/cost-history", response_model=MaterialCostHistoryRead, status_code=status.HTTP_201_CREATED)
+def create_material_cost_history(
+    material_id: int,
+    payload: MaterialCostHistoryCreate,
+    session: Session = Depends(get_session),
+    _: bool = Depends(require_auth),
+):
+    if material_id != payload.material_id:
+        raise HTTPException(status_code=400, detail="Material ID mismatch")
+    material = session.get(Material, material_id)
+    if not material:
+        raise HTTPException(status_code=404, detail="Material not found")
+    entry = MaterialCostHistory.from_orm(payload)
+    session.add(entry)
+    session.commit()
+    session.refresh(entry)
+    return entry
 
 
 @app.post("/materials/{material_id}/barcode", response_model=MaterialRead)
@@ -283,7 +344,9 @@ def create_inventory_item(
     _: bool = Depends(require_auth),
 ):
     _ensure_material_exists(session, payload.material_id)
-    inventory_item = InventoryItem.from_orm(payload)
+    data = payload.dict()
+    data["spool_serial"] = normalize_barcode(data.get("spool_serial"))
+    inventory_item = InventoryItem(**data)
     session.add(inventory_item)
     session.commit()
     session.refresh(inventory_item)
@@ -317,6 +380,8 @@ def update_inventory_item(
     update_data = payload.dict(exclude_unset=True)
     if "material_id" in update_data:
         _ensure_material_exists(session, update_data["material_id"])
+    if "spool_serial" in update_data:
+        update_data["spool_serial"] = normalize_barcode(update_data.get("spool_serial"))
     for key, value in update_data.items():
         setattr(item, key, value)
     session.add(item)
@@ -463,7 +528,9 @@ def create_print_model(
     session: Session = Depends(get_session),
     _: bool = Depends(require_auth),
 ):
-    model = PrintModel.from_orm(payload)
+    data = payload.dict()
+    data["sku"] = normalize_sku(data.get("sku"))
+    model = PrintModel(**data)
     session.add(model)
     session.commit()
     session.refresh(model)
@@ -496,6 +563,8 @@ def update_print_model(
     if not model:
         raise HTTPException(status_code=404, detail="Model not found")
     update_data = payload.dict(exclude_unset=True)
+    if "sku" in update_data:
+        update_data["sku"] = normalize_sku(update_data.get("sku"))
     for key, value in update_data.items():
         setattr(model, key, value)
     session.add(model)

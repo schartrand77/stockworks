@@ -22,6 +22,7 @@ class MaterialBase(SQLModel):
 class Material(MaterialBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     inventory_items: List["InventoryItem"] = Relationship(back_populates="material")
+    cost_history: List["MaterialCostHistory"] = Relationship(back_populates="material")
 
 
 class MaterialCreate(MaterialBase):
@@ -44,6 +45,30 @@ class MaterialUpdate(SQLModel):
 
 class MaterialRead(MaterialBase):
     id: int
+
+
+class MaterialCostHistoryBase(SQLModel):
+    material_id: int
+    unit_cost_per_gram: float = Field(gt=0, description="Recorded material cost per gram")
+    vendor: Optional[str] = None
+    reference: Optional[str] = Field(default=None, description="PO, invoice, or receipt reference")
+    note: Optional[str] = None
+
+
+class MaterialCostHistory(MaterialCostHistoryBase, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    recorded_at: datetime = Field(default_factory=datetime.utcnow)
+
+    material: Optional[Material] = Relationship(back_populates="cost_history")
+
+
+class MaterialCostHistoryCreate(MaterialCostHistoryBase):
+    pass
+
+
+class MaterialCostHistoryRead(MaterialCostHistoryBase):
+    id: int
+    recorded_at: datetime
 
 
 class InventoryItemBase(SQLModel):
