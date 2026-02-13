@@ -39,6 +39,7 @@ const materialFields = {
   price_per_gram: document.getElementById("material-price"),
   spool_weight_grams: document.getElementById("material-spool"),
   barcode: document.getElementById("material-barcode"),
+  refill_barcode: document.getElementById("material-refill-barcode"),
   notes: document.getElementById("material-notes"),
 };
 const materialColorDot = document.getElementById("material-color-dot");
@@ -50,7 +51,7 @@ const materialClearBtn = document.getElementById("material-clear");
 const materialRefreshBtn = document.getElementById("material-refresh");
 const materialDeleteBtn = document.getElementById("material-delete");
 const materialBarcodeScanBtn = document.getElementById("material-barcode-scan");
-const materialBarcodeGenerateBtn = document.getElementById("material-barcode-generate");
+const materialRefillBarcodeScanBtn = document.getElementById("material-refill-barcode-scan");
 const materialBarcodePrintBtn = document.getElementById("material-barcode-print");
 const materialCostHistoryList = document.getElementById("material-cost-history-list");
 const filamentTypeDatalist = document.getElementById("filament-type-list");
@@ -527,24 +528,23 @@ function bindEvents() {
   if (materialBarcodeScanBtn) {
     materialBarcodeScanBtn.addEventListener("click", () => {
       openBarcodeScanner({
-        title: "Scan material barcode",
+        title: "Scan spool barcode",
         onDetected: (value) => {
           materialFields.barcode.value = value;
-          setMessage(`Scanned barcode: ${value}`, "success");
+          setMessage(`Scanned spool barcode: ${value}`, "success");
         },
       });
     });
   }
-  if (materialBarcodeGenerateBtn) {
-    materialBarcodeGenerateBtn.addEventListener("click", () => {
-      const hasBarcode = materialFields.barcode.value.trim();
-      if (hasBarcode) {
-        const confirmed = confirm("Replace the existing barcode with a new one?");
-        if (!confirmed) {
-          return;
-        }
-      }
-      safeAsync(() => generateMaterialBarcode({ force: Boolean(hasBarcode) }));
+  if (materialRefillBarcodeScanBtn) {
+    materialRefillBarcodeScanBtn.addEventListener("click", () => {
+      openBarcodeScanner({
+        title: "Scan refill barcode",
+        onDetected: (value) => {
+          materialFields.refill_barcode.value = value;
+          setMessage(`Scanned refill barcode: ${value}`, "success");
+        },
+      });
     });
   }
   if (materialBarcodePrintBtn) {
@@ -1072,10 +1072,21 @@ function renderMaterials() {
   }
   materialTableBody.innerHTML = items
     .map((material) => {
-      const barcodeLabel = material.barcode
-        ? `<span class="barcode-value">${escapeHtml(material.barcode)}</span>`
+      const hasRefillBarcode = Boolean(optionalString(material.refill_barcode || ""));
+      const barcodeValues = [];
+      const seenBarcodes = new Set();
+      [material.barcode, material.refill_barcode].forEach((value) => {
+        const raw = optionalString(value || "");
+        if (!raw) return;
+        const normalized = normalizeBarcode(raw);
+        if (!normalized || seenBarcodes.has(normalized)) return;
+        seenBarcodes.add(normalized);
+        barcodeValues.push(raw);
+      });
+      const barcodeDisplay = barcodeValues.length
+        ? barcodeValues.map((value) => `<span class="barcode-value">${escapeHtml(value)}</span>`).join("")
         : `<span class="muted">-</span>`;
-      const barcodeAction = material.barcode
+      const barcodeAction = material.barcode || hasRefillBarcode
         ? `<button class="small-button" data-action="print-barcode" data-id="${material.id}">Print</button>`
         : "";
       return `
@@ -1090,7 +1101,7 @@ function renderMaterials() {
           <td>${escapeHtml(material.supplier || "")}</td>
           <td>
             <div class="barcode-cell">
-              ${barcodeLabel}
+              ${barcodeDisplay}
               ${barcodeAction}
             </div>
           </td>
@@ -2034,6 +2045,7 @@ function startMaterialEdit(id) {
   materialFields.price_per_gram.value = material.price_per_gram;
   materialFields.spool_weight_grams.value = material.spool_weight_grams;
   materialFields.barcode.value = material.barcode || "";
+  materialFields.refill_barcode.value = material.refill_barcode || "";
   materialFields.notes.value = material.notes || "";
   updateMaterialColorRequirement();
   syncMaterialColorInputs({ source: "text" });
@@ -2210,6 +2222,7 @@ function buildMaterialPayload() {
     price_per_gram: price,
     spool_weight_grams: Math.round(spool),
     barcode: optionalString(normalizeBarcode(materialFields.barcode.value)),
+    refill_barcode: optionalString(normalizeBarcode(materialFields.refill_barcode.value)),
     notes: optionalString(materialFields.notes.value),
   };
 }
@@ -2571,7 +2584,12 @@ function findMaterialByBarcode(barcode) {
   if (!normalized) {
     return null;
   }
-  return state.materials.find((material) => normalizeBarcode(material.barcode) === normalized) || null;
+  return (
+    state.materials.find(
+      (material) =>
+        normalizeBarcode(material.barcode) === normalized || normalizeBarcode(material.refill_barcode) === normalized
+    ) || null
+  );
 }
 
 function findInventoryByBarcode(barcode) {
@@ -2580,7 +2598,11 @@ function findInventoryByBarcode(barcode) {
     return [];
   }
   return state.inventory.filter((item) => {
-    if (item.material && normalizeBarcode(item.material.barcode) === normalized) {
+    if (
+      item.material &&
+      (normalizeBarcode(item.material.barcode) === normalized ||
+        normalizeBarcode(item.material.refill_barcode) === normalized)
+    ) {
       return true;
     }
     return normalizeBarcode(item.spool_serial) === normalized;
@@ -2714,20 +2736,6 @@ function closeBarcodeScanner({ silent = false } = {}) {
   }
 }
 
-async function generateMaterialBarcode({ force = false } = {}) {
-  if (!state.currentMaterialId) {
-    setMessage("Save the material before generating a barcode.", "error");
-    return;
-  }
-  const query = force ? "?force=true" : "";
-  const material = await api(`/materials/${state.currentMaterialId}/barcode${query}`, { method: "POST" });
-  await loadMaterials();
-  if (material && material.id) {
-    startMaterialEdit(material.id);
-  }
-  showToast("Barcode generated.", "success");
-}
-
 async function printMaterialBarcode(materialId) {
   if (!materialId) {
     setMessage("Select a material to print its barcode.", "error");
@@ -2738,17 +2746,18 @@ async function printMaterialBarcode(materialId) {
     await loadMaterials();
     material = state.materials.find((item) => item.id === materialId);
   }
-  if (!material || !material.barcode) {
-    setMessage("Material barcode is missing. Generate one first.", "error");
+  const barcodeValue = normalizeBarcode(material?.barcode) || normalizeBarcode(material?.refill_barcode);
+  if (!material || !barcodeValue) {
+    setMessage("Material barcode is missing. Set a barcode first.", "error");
     return;
   }
   const labelLines = buildBarcodeLabelLines(material);
-  const barcodeUrl = `/materials/${material.id}/barcode?ts=${Date.now()}`;
+  const barcodeUrl = `/materials/${material.id}/barcode?value=${encodeURIComponent(barcodeValue)}&ts=${Date.now()}`;
   openBarcodePrintWindow({
     title: material.name,
     barcodeUrl,
     labelLines,
-    barcodeValue: material.barcode,
+    barcodeValue,
   });
 }
 

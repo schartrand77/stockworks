@@ -114,6 +114,7 @@ def _ensure_material_columns() -> None:
     desired_columns = {
         "category": "TEXT",
         "barcode": "TEXT",
+        "refill_barcode": "TEXT",
         "color_hex": "TEXT",
     }
     backend = engine.url.get_backend_name()

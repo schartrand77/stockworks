@@ -180,12 +180,18 @@
               <input type="number" min="1" id="material-spool" required />
             </label>
             <label>
-              Barcode / SKU
+              Spool barcode / SKU
               <div class="scan-field">
                 <input type="text" id="material-barcode" placeholder="UPC, EAN, SKU..." />
                 <button type="button" id="material-barcode-scan" class="scan-button">Scan</button>
-                <button type="button" id="material-barcode-generate" class="scan-button">Generate</button>
                 <button type="button" id="material-barcode-print" class="scan-button">Print</button>
+              </div>
+            </label>
+            <label>
+              Refill barcode / SKU
+              <div class="scan-field">
+                <input type="text" id="material-refill-barcode" placeholder="UPC, EAN, SKU..." />
+                <button type="button" id="material-refill-barcode-scan" class="scan-button">Scan</button>
               </div>
             </label>
             <label class="full-width">
@@ -220,7 +226,7 @@
                   <th class="sortable" data-sort-key="price_per_gram" aria-sort="none">Price/g</th>
                   <th class="sortable" data-sort-key="spool_weight_grams" aria-sort="none">Spool (g)</th>
                   <th class="sortable" data-sort-key="supplier" aria-sort="none">Supplier</th>
-                  <th class="sortable" data-sort-key="barcode" aria-sort="none">Barcode</th>
+                  <th class="sortable" data-sort-key="barcode" aria-sort="none">Barcodes</th>
                   <th></th>
                 </tr>
               </thead>

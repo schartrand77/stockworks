@@ -16,7 +16,7 @@ from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, func, select
 from starlette.middleware.sessions import SessionMiddleware
 
-from .barcodes import generate_material_barcode, render_barcode_png
+from .barcodes import render_barcode_png
 from .color_resolver import normalize_hex
 from .db import get_session, init_db
 from .filament_types import bambu_x1c_filament_types
@@ -191,6 +191,7 @@ def create_material(
     data = payload.dict()
     data["color_hex"] = normalize_hex(data.get("color_hex"))
     data["barcode"] = normalize_barcode(data.get("barcode"))
+    data["refill_barcode"] = normalize_barcode(data.get("refill_barcode"))
     data["name"] = _ensure_unique_material_name(session, data["name"])
     material = Material(**data)
     session.add(material)
@@ -240,6 +241,8 @@ def update_material(
         update_data["color_hex"] = normalize_hex(color_hex)
     if "barcode" in update_data:
         update_data["barcode"] = normalize_barcode(update_data.get("barcode"))
+    if "refill_barcode" in update_data:
+        update_data["refill_barcode"] = normalize_barcode(update_data.get("refill_barcode"))
     for key, value in update_data.items():
         setattr(material, key, value)
     session.add(material)
@@ -291,37 +294,25 @@ def create_material_cost_history(
     return entry
 
 
-@app.post("/materials/{material_id}/barcode", response_model=MaterialRead)
-def create_material_barcode(
-    material_id: int,
-    force: bool = False,
-    session: Session = Depends(get_session),
-    _: bool = Depends(require_auth),
-):
-    material = session.get(Material, material_id)
-    if not material:
-        raise HTTPException(status_code=404, detail="Material not found")
-    if material.barcode and not force:
-        return material
-    material.barcode = generate_material_barcode(session)
-    session.add(material)
-    session.commit()
-    session.refresh(material)
-    return material
-
-
 @app.get("/materials/{material_id}/barcode")
 def get_material_barcode(
     material_id: int,
+    value: str | None = None,
     session: Session = Depends(get_session),
     _: bool = Depends(require_auth),
 ):
     material = session.get(Material, material_id)
     if not material:
         raise HTTPException(status_code=404, detail="Material not found")
-    if not material.barcode:
+    selected_value = normalize_barcode(value) if value is not None else None
+    available_values = {normalize_barcode(material.barcode), normalize_barcode(material.refill_barcode)}
+    available_values.discard(None)
+    if selected_value and selected_value not in available_values:
+        raise HTTPException(status_code=400, detail="Barcode value does not match this material")
+    barcode_to_render = selected_value or normalize_barcode(material.barcode) or normalize_barcode(material.refill_barcode)
+    if not barcode_to_render:
         raise HTTPException(status_code=404, detail="Material barcode not set")
-    png_bytes = render_barcode_png(material.barcode)
+    png_bytes = render_barcode_png(barcode_to_render)
     headers = {"Cache-Control": "no-store"}
     return Response(content=png_bytes, media_type="image/png", headers=headers)
 
