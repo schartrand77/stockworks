@@ -728,6 +728,7 @@ button.danger:hover {
   color: var(--sap-primary);
   text-decoration: none;
   white-space: nowrap;
+  touch-action: manipulation;
 }
 
 .scan-button:hover {

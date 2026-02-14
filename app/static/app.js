@@ -335,6 +335,29 @@ function syncMaterialColorInputs({ source } = {}) {
   updateMaterialColorPreview(materialFields.color_hex.value);
 }
 
+function bindTap(button, handler) {
+  if (!button || typeof handler !== "function") {
+    return;
+  }
+  let lastTouchTime = 0;
+  button.addEventListener(
+    "touchend",
+    (event) => {
+      event.preventDefault();
+      lastTouchTime = Date.now();
+      handler(event);
+    },
+    { passive: false }
+  );
+  button.addEventListener("click", (event) => {
+    if (Date.now() - lastTouchTime < 700) {
+      event.preventDefault();
+      return;
+    }
+    handler(event);
+  });
+}
+
 function bindEvents() {
   refreshAllBtn.addEventListener("click", refreshAll);
   materialRefreshBtn.addEventListener("click", () => safeAsync(loadMaterials));
@@ -526,7 +549,7 @@ function bindEvents() {
     installButton.addEventListener("click", handleInstallButtonClick);
   }
   if (materialBarcodeScanBtn) {
-    materialBarcodeScanBtn.addEventListener("click", () => {
+    bindTap(materialBarcodeScanBtn, () => {
       openBarcodeScanner({
         title: "Scan spool barcode",
         onDetected: (value) => {
@@ -537,7 +560,7 @@ function bindEvents() {
     });
   }
   if (materialRefillBarcodeScanBtn) {
-    materialRefillBarcodeScanBtn.addEventListener("click", () => {
+    bindTap(materialRefillBarcodeScanBtn, () => {
       openBarcodeScanner({
         title: "Scan refill barcode",
         onDetected: (value) => {
@@ -553,7 +576,7 @@ function bindEvents() {
     });
   }
   if (inventoryMaterialScanBtn) {
-    inventoryMaterialScanBtn.addEventListener("click", () => {
+    bindTap(inventoryMaterialScanBtn, () => {
       openBarcodeScanner({
         title: "Scan material barcode",
         onDetected: async (value) => {
