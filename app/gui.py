@@ -11,7 +11,7 @@ from sqlmodel import func, select
 from .color_resolver import normalize_hex
 from .db import init_db, session_scope
 from .filament_types import BAMBU_X1C_FILAMENT_TYPES
-from .models import InventoryItem, Material, StockMovement
+from .models import InventoryItem, Material, MaterialCostHistory, StockMovement
 
 
 class StockWorksApp(tk.Tk):
@@ -306,14 +306,28 @@ class StockWorksApp(tk.Tk):
         if not material_id:
             messagebox.showwarning("Select material", "Please choose a material to delete.")
             return
-        if not messagebox.askyesno("Delete material", "Delete the selected material and related inventory?"):
+        if not messagebox.askyesno("Delete material", "Delete the selected material and all related records?"):
             return
         with session_scope() as session:
             material = session.get(Material, material_id)
             if not material:
                 messagebox.showerror("Not found", "Material could not be located.")
                 return
-            # cascade removal will drop inventory via FK constraints
+            inventory_items = session.exec(select(InventoryItem).where(InventoryItem.material_id == material_id)).all()
+            inventory_ids = [item.id for item in inventory_items if item.id is not None]
+            if inventory_ids:
+                movements = session.exec(
+                    select(StockMovement).where(StockMovement.inventory_item_id.in_(inventory_ids))
+                ).all()
+                for movement in movements:
+                    session.delete(movement)
+            for item in inventory_items:
+                session.delete(item)
+            history_entries = session.exec(
+                select(MaterialCostHistory).where(MaterialCostHistory.material_id == material_id)
+            ).all()
+            for entry in history_entries:
+                session.delete(entry)
             session.delete(material)
         self.refresh_materials()
         self.refresh_inventory()

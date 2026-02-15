@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, func, select
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -322,8 +323,16 @@ def delete_material(material_id: int, session: Session = Depends(get_session), _
     material = session.get(Material, material_id)
     if not material:
         raise HTTPException(status_code=404, detail="Material not found")
-    session.delete(material)
-    session.commit()
+    try:
+        _delete_material_dependencies(session, material_id)
+        session.delete(material)
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="Material cannot be deleted because related records still reference it.",
+        )
     return None
 
 
@@ -667,6 +676,27 @@ def healthcheck() -> dict[str, str]:
 def _ensure_material_exists(session: Session, material_id: int) -> None:
     if not session.get(Material, material_id):
         raise HTTPException(status_code=404, detail="Material not found")
+
+
+def _delete_material_dependencies(session: Session, material_id: int) -> None:
+    inventory_items = session.exec(select(InventoryItem).where(InventoryItem.material_id == material_id)).all()
+    inventory_ids = [item.id for item in inventory_items if item.id is not None]
+
+    if inventory_ids:
+        movements = session.exec(
+            select(StockMovement).where(StockMovement.inventory_item_id.in_(inventory_ids))
+        ).all()
+        for movement in movements:
+            session.delete(movement)
+
+    for item in inventory_items:
+        session.delete(item)
+
+    cost_history_entries = session.exec(
+        select(MaterialCostHistory).where(MaterialCostHistory.material_id == material_id)
+    ).all()
+    for entry in cost_history_entries:
+        session.delete(entry)
 
 
 def _ensure_unique_material_name(session: Session, name: str) -> str:

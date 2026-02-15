@@ -2150,7 +2150,7 @@ function startModelEdit(id) {
 }
 
 async function deleteMaterial(id) {
-  if (!confirm("Delete this material? Make sure related inventory entries are removed first.")) {
+  if (!confirm("Delete this material and all related records?")) {
     return;
   }
   try {
