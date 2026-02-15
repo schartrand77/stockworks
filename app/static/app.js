@@ -14,6 +14,11 @@ const state = {
   orderworksError: null,
   orderworksConfigured: true,
   orderworksBaseUrl: "",
+  bambuViewPrinters: [],
+  bambuViewLoadedCount: 0,
+  bambuViewError: null,
+  bambuViewConfigured: true,
+  bambuViewBaseUrl: "",
   lastInventoryMovements: [],
   lastHardwareMovements: [],
   lastModelSales: [],
@@ -177,6 +182,9 @@ const reportUsageEl = document.getElementById("report-usage");
 const reportOrderworksMetricsEl = document.getElementById("report-orderworks-metrics");
 const reportOrderworksStatusEl = document.getElementById("report-orderworks-status");
 const reportOrderworksRevenueEl = document.getElementById("report-orderworks-revenue");
+const bambuViewRefreshBtn = document.getElementById("bambu-view-refresh");
+const bambuViewStatusEl = document.getElementById("bambu-view-status");
+const bambuViewTableBody = document.querySelector("#bambu-view-table tbody");
 const installButton = document.getElementById("install-app");
 let themeToggleBtn = null;
 let themeToggleLabelEl = null;
@@ -368,6 +376,9 @@ function bindEvents() {
   hardwareRefreshBtn.addEventListener("click", () => safeAsync(loadHardware));
   if (orderworksRefreshBtn) {
     orderworksRefreshBtn.addEventListener("click", () => safeAsync(loadOrderWorksJobs));
+  }
+  if (bambuViewRefreshBtn) {
+    bambuViewRefreshBtn.addEventListener("click", () => safeAsync(loadBambuViewFilaments));
   }
   if (reportsRefreshBtn) {
     reportsRefreshBtn.addEventListener("click", () => safeAsync(refreshReports));
@@ -709,6 +720,7 @@ async function refreshAll() {
       loadModels(),
       loadHardware(),
       loadOrderWorksJobs({ silent: true }).catch(() => null),
+      loadBambuViewFilaments({ silent: true }).catch(() => null),
     ]);
     setMessage("Data refreshed.", "success");
   } catch (error) {
@@ -724,6 +736,7 @@ async function refreshReports() {
     loadModels(),
     loadHardware(),
     loadOrderWorksJobs({ silent: true }).catch(() => null),
+    loadBambuViewFilaments({ silent: true }).catch(() => null),
   ]);
   renderReports();
   setMessage("Reports updated.", "success");
@@ -843,6 +856,32 @@ async function loadOrderWorksJobs({ silent = false } = {}) {
     renderOrderWorks();
   }
   renderReports();
+}
+
+async function loadBambuViewFilaments({ silent = false } = {}) {
+  const shouldFetch = bambuViewTableBody || bambuViewStatusEl;
+  if (!shouldFetch) {
+    return;
+  }
+  try {
+    const payload = await api("/bambu-view/filaments");
+    state.bambuViewPrinters = Array.isArray(payload.printers) ? payload.printers : [];
+    state.bambuViewLoadedCount = Number(payload.loaded_count || 0);
+    state.bambuViewError = null;
+    state.bambuViewConfigured = true;
+    state.bambuViewBaseUrl = typeof payload.base_url === "string" ? payload.base_url : "";
+  } catch (error) {
+    console.error(error);
+    state.bambuViewPrinters = [];
+    state.bambuViewLoadedCount = 0;
+    state.bambuViewBaseUrl = "";
+    state.bambuViewError = error && error.message ? error.message : "Unable to sync Bambu View filament data.";
+    state.bambuViewConfigured = error && Number(error.status) === 503 ? false : true;
+    if (!silent) {
+      setMessage(state.bambuViewError, "error");
+    }
+  }
+  renderBambuView();
 }
 
 async function loadMovements(itemId) {
@@ -1748,6 +1787,72 @@ function renderOrderWorks() {
         </tr>`;
     })
     .join("");
+}
+
+function renderBambuView() {
+  if (bambuViewStatusEl) {
+    if (!state.bambuViewConfigured) {
+      bambuViewStatusEl.textContent =
+        "Bambu View integration is not configured. Set BAMBU_VIEW_BASE_URL to load active filaments.";
+      bambuViewStatusEl.classList.remove("error");
+      bambuViewStatusEl.classList.add("muted");
+    } else if (state.bambuViewError) {
+      bambuViewStatusEl.textContent = state.bambuViewError;
+      bambuViewStatusEl.classList.add("error");
+      bambuViewStatusEl.classList.remove("muted");
+    } else {
+      const printerCount = state.bambuViewPrinters.length;
+      const trayCount = state.bambuViewLoadedCount;
+      const source = state.bambuViewBaseUrl ? ` from ${state.bambuViewBaseUrl}` : "";
+      bambuViewStatusEl.textContent = `Loaded trays: ${trayCount} across ${printerCount} printer${
+        printerCount === 1 ? "" : "s"
+      }${source}.`;
+      bambuViewStatusEl.classList.remove("error");
+      bambuViewStatusEl.classList.add("muted");
+    }
+  }
+
+  if (!bambuViewTableBody) {
+    return;
+  }
+  if (!state.bambuViewConfigured) {
+    bambuViewTableBody.innerHTML = `<tr><td colspan="6" class="muted">Configure BAMBU_VIEW_* settings to sync loaded filaments.</td></tr>`;
+    return;
+  }
+  if (state.bambuViewError) {
+    bambuViewTableBody.innerHTML = `<tr><td colspan="6" class="muted">${escapeHtml(state.bambuViewError)}</td></tr>`;
+    return;
+  }
+
+  const rows = [];
+  for (const printer of state.bambuViewPrinters) {
+    const loaded = Array.isArray(printer.loaded_trays) ? printer.loaded_trays : [];
+    for (const tray of loaded) {
+      const position =
+        Number.isFinite(Number(tray.unit)) && Number.isFinite(Number(tray.slot)) ? `U${tray.unit} S${tray.slot}` : "-";
+      const colorHex = normalizeHexValue(tray.color);
+      const colorLabel = colorHex
+        ? `<span class="color-chip"><span class="color-dot" style="--swatch-color: ${colorHex}" aria-hidden="true"></span><span>${escapeHtml(
+            colorHex
+          )}</span></span>`
+        : `<span class="muted">-</span>`;
+      rows.push(`
+        <tr>
+          <td>${escapeHtml(printer.printer_name || printer.printer_id || "Printer")}</td>
+          <td>${escapeHtml(position)}</td>
+          <td>${escapeHtml(tray.material || "-")}</td>
+          <td>${escapeHtml(tray.name || "-")}</td>
+          <td>${colorLabel}</td>
+          <td>${escapeHtml(tray.state || "-")}</td>
+        </tr>
+      `);
+    }
+  }
+  if (!rows.length) {
+    bambuViewTableBody.innerHTML = `<tr><td colspan="6" class="muted">No loaded trays reported by Bambu View.</td></tr>`;
+    return;
+  }
+  bambuViewTableBody.innerHTML = rows.join("");
 }
 
 function renderMovements(movements) {

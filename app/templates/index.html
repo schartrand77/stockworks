@@ -839,6 +839,33 @@
               </div>
             </section>
             <section class="settings-block">
+              <h3>Bambu View</h3>
+              <p>See currently loaded filament trays from your Bambu printers.</p>
+              <div class="settings-actions">
+                <button id="bambu-view-refresh" type="button">Refresh filaments</button>
+              </div>
+              <p id="bambu-view-status" class="integration-status muted"></p>
+              <div class="table-wrapper">
+                <table id="bambu-view-table">
+                  <thead>
+                    <tr>
+                      <th>Printer</th>
+                      <th>Tray</th>
+                      <th>Material</th>
+                      <th>Name</th>
+                      <th>Color</th>
+                      <th>State</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td colspan="6" class="muted">No Bambu View data loaded yet.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+            <section class="settings-block">
               <h3>Session</h3>
               <p>End your current StockWorks session.</p>
               <form method="post" action="/logout" class="settings-actions">

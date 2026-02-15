@@ -70,6 +70,17 @@ There are two ways your admin can connect StockWorks:
 - Each job may include a link to open the same order in OrderWorks.
 - If something is missing, you will see a message explaining what is needed.
 
+## Bambu View filament sync (loaded trays)
+StockWorks can also read loaded AMS trays from Bambu View so you can quickly see what filament is currently mounted.
+
+Set these variables if you want that integration:
+- `BAMBU_VIEW_BASE_URL` (required for Bambu View sync)
+- `BAMBU_VIEW_API_KEY` (recommended when Bambu View API auth is enabled)
+- `BAMBU_VIEW_API_AUTH_HEADER` (defaults to `X-API-Key`)
+- `BAMBU_VIEW_ADMIN_USERNAME` and `BAMBU_VIEW_ADMIN_PASSWORD` (optional fallback if you are not using an API key)
+
+The loaded tray list appears in **Settings > Bambu View**.
+
 ## Simple tips
 - Use Dashboard first if you only have a minute.
 - Use Movements to answer "what changed today?"

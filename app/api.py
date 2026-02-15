@@ -18,6 +18,12 @@ from sqlmodel import Session, func, select
 from starlette.middleware.sessions import SessionMiddleware
 
 from .barcodes import render_barcode_png
+from .bambu_view import (
+    BambuViewAuthenticationError,
+    BambuViewIntegrationError,
+    BambuViewNotConfiguredError,
+    get_bambu_view_client,
+)
 from .color_resolver import normalize_hex
 from .db import get_session, init_db
 from .filament_types import bambu_x1c_filament_types
@@ -668,6 +674,45 @@ def fetch_orderworks_jobs(
     return {"jobs": jobs, "base_url": base_url_override}
 
 
+@app.get("/bambu-view/filaments")
+def fetch_bambu_view_filaments(_: bool = Depends(require_auth)):
+    client = get_bambu_view_client()
+    if not client.is_configured:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Bambu View integration is not configured. Set BAMBU_VIEW_BASE_URL.",
+        )
+    try:
+        fleet = client.fetch_fleet()
+    except BambuViewNotConfiguredError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Bambu View integration is not configured.",
+        )
+    except BambuViewAuthenticationError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+    except BambuViewIntegrationError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+
+    printers = []
+    loaded_count = 0
+    for printer in fleet:
+        if not isinstance(printer, dict):
+            continue
+        ams = printer.get("ams") if isinstance(printer.get("ams"), dict) else {}
+        trays = ams.get("trays") if isinstance(ams.get("trays"), list) else []
+        loaded_trays = [_normalize_loaded_tray(item) for item in trays if _is_loaded_tray(item)]
+        loaded_count += len(loaded_trays)
+        printers.append(
+            {
+                "printer_id": str(printer.get("printer_id") or ""),
+                "printer_name": str(printer.get("printer_name") or printer.get("printer_id") or "Printer"),
+                "loaded_trays": loaded_trays,
+            }
+        )
+    return {"printers": printers, "loaded_count": loaded_count, "base_url": client.base_url}
+
+
 @app.get("/health", tags=["system"])
 def healthcheck() -> dict[str, str]:
     return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
@@ -676,6 +721,35 @@ def healthcheck() -> dict[str, str]:
 def _ensure_material_exists(session: Session, material_id: int) -> None:
     if not session.get(Material, material_id):
         raise HTTPException(status_code=404, detail="Material not found")
+
+
+def _is_loaded_tray(tray: object) -> bool:
+    if not isinstance(tray, dict):
+        return False
+    material = str(tray.get("material") or tray.get("tray_type") or "").strip()
+    name = str(tray.get("name") or tray.get("tray_id_name") or "").strip()
+    state_value = str(tray.get("state") or tray.get("tray_state") or "").strip().lower()
+    if material or name:
+        return True
+    if state_value in {"loaded", "ready", "available", "installed"}:
+        return True
+    if state_value in {"", "none", "empty"}:
+        return False
+    return False
+
+
+def _normalize_loaded_tray(tray: object) -> dict[str, object]:
+    if not isinstance(tray, dict):
+        return {"id": "", "unit": None, "slot": None, "material": "", "name": "", "color": "", "state": ""}
+    return {
+        "id": str(tray.get("id") or ""),
+        "unit": tray.get("unit"),
+        "slot": tray.get("slot"),
+        "material": str(tray.get("material") or tray.get("tray_type") or "").strip(),
+        "name": str(tray.get("name") or tray.get("tray_id_name") or "").strip(),
+        "color": str(tray.get("color") or "").strip(),
+        "state": str(tray.get("state") or tray.get("tray_state") or "").strip(),
+    }
 
 
 def _delete_material_dependencies(session: Session, material_id: int) -> None:
