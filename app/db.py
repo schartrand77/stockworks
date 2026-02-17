@@ -79,6 +79,7 @@ def init_db() -> None:
     _ensure_schema_exists()
     SQLModel.metadata.create_all(engine)
     _ensure_material_columns()
+    _ensure_hardware_columns()
     _DB_READY = True
 
 
@@ -145,3 +146,24 @@ def _ensure_schema_exists() -> None:
     with engine.begin() as conn:
         quoted_schema = engine.dialect.identifier_preparer.quote(schema)
         conn.exec_driver_sql(f"CREATE SCHEMA IF NOT EXISTS {quoted_schema}")
+
+
+def _ensure_hardware_columns() -> None:
+    desired_columns = {
+        "makerworks_product_template_id": "TEXT",
+    }
+    backend = engine.url.get_backend_name()
+    with engine.begin() as conn:
+        if backend == "sqlite":
+            pragma_rows = conn.exec_driver_sql("PRAGMA table_info(hardwareitem)").fetchall()
+            existing_columns = {row[1] for row in pragma_rows}
+            for column, ddl in desired_columns.items():
+                if column not in existing_columns:
+                    conn.exec_driver_sql(f"ALTER TABLE hardwareitem ADD COLUMN {column} {ddl}")
+            return
+        if backend.startswith("postgres"):
+            schema = (DB_SCHEMA or "public").strip() or "public"
+            quoted_schema = engine.dialect.identifier_preparer.quote(schema)
+            table_name = f"{quoted_schema}.hardwareitem"
+            for column, ddl in desired_columns.items():
+                conn.exec_driver_sql(f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS {column} {ddl}")

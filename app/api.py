@@ -6,7 +6,7 @@ import os
 import secrets
 from datetime import datetime
 from pathlib import Path
-from typing import List
+from typing import Any, List, Optional
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -528,6 +528,14 @@ def list_hardware_movements(hardware_id: int, session: Session = Depends(get_ses
     return session.exec(statement).all()
 
 
+@app.post("/makerworks/merch/sync")
+def sync_makerworks_merch_inventory(
+    session: Session = Depends(get_session),
+    _: bool = Depends(require_auth),
+):
+    return _sync_makerworks_merch_to_hardware(session)
+
+
 # 3D model endpoints
 @app.post("/models", response_model=PrintModelRead, status_code=status.HTTP_201_CREATED)
 def create_print_model(
@@ -710,6 +718,8 @@ def fetch_bambu_view_filaments(_: bool = Depends(require_auth)):
             {
                 "printer_id": str(printer.get("printer_id") or ""),
                 "printer_name": str(printer.get("printer_name") or printer.get("printer_id") or "Printer"),
+                "ams_slots": ams.get("slots"),
+                "ams_units": ams.get("units"),
                 "loaded_trays": loaded_trays,
             }
         )
@@ -939,3 +949,219 @@ def _sync_model_to_makerworks_product_template(session: Session, model: PrintMod
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Failed to sync model to MakerWorks ProductTemplate: {exc}",
         ) from exc
+
+
+def _sync_makerworks_merch_to_hardware(session: Session) -> dict[str, Any]:
+    bind = session.get_bind()
+    if bind is None or bind.dialect.name != "postgresql":
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="MakerWorks merch sync requires a shared PostgreSQL database connection.",
+        )
+
+    conn = session.connection()
+    table_exists = conn.execute(
+        text(
+            """
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_name = 'ProductTemplate'
+            """
+        )
+    ).first()
+    if not table_exists:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail='MakerWorks table public."ProductTemplate" was not found.',
+        )
+
+    available_columns = _fetch_table_columns(conn, "public", "ProductTemplate")
+    id_column = _find_matching_column(available_columns, ["id"])
+    title_column = _find_matching_column(available_columns, ["title", "name"])
+    description_column = _find_matching_column(available_columns, ["description", "details"])
+    active_column = _find_matching_column(available_columns, ["isActive", "active", "enabled"])
+    stockworks_link_column = _find_matching_column(
+        available_columns, ["stockworksInventoryItemId", "stockworks_inventory_item_id"]
+    )
+    quantity_column = _find_matching_column(
+        available_columns,
+        [
+            "quantityOnHand",
+            "stockOnHand",
+            "inventoryQuantity",
+            "inventoryCount",
+            "availableQuantity",
+            "onHand",
+            "stock",
+        ],
+    )
+    reorder_column = _find_matching_column(available_columns, ["reorderLevel", "reorderPoint", "restockThreshold"])
+    unit_column = _find_matching_column(available_columns, ["unitOfMeasure", "uom", "unit"])
+
+    if not id_column or not title_column:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail='MakerWorks ProductTemplate is missing required merch columns ("id" and/or "title").',
+        )
+
+    select_parts = [
+        f'{_quote_identifier(id_column)} AS "makerworks_id"',
+        f'{_quote_identifier(title_column)} AS "title"',
+    ]
+    if description_column:
+        select_parts.append(f'{_quote_identifier(description_column)} AS "description"')
+    else:
+        select_parts.append('NULL AS "description"')
+    if active_column:
+        select_parts.append(f'{_quote_identifier(active_column)} AS "is_active"')
+    else:
+        select_parts.append('TRUE AS "is_active"')
+    if stockworks_link_column:
+        select_parts.append(f'{_quote_identifier(stockworks_link_column)} AS "stockworks_inventory_item_id"')
+    else:
+        select_parts.append('NULL AS "stockworks_inventory_item_id"')
+    if quantity_column:
+        select_parts.append(f'{_quote_identifier(quantity_column)} AS "quantity_on_hand"')
+    else:
+        select_parts.append('NULL AS "quantity_on_hand"')
+    if reorder_column:
+        select_parts.append(f'{_quote_identifier(reorder_column)} AS "reorder_level"')
+    else:
+        select_parts.append('NULL AS "reorder_level"')
+    if unit_column:
+        select_parts.append(f'{_quote_identifier(unit_column)} AS "unit_of_measure"')
+    else:
+        select_parts.append('NULL AS "unit_of_measure"')
+
+    where_fragments = []
+    if stockworks_link_column:
+        quoted_link = _quote_identifier(stockworks_link_column)
+        where_fragments.append(f"({quoted_link} IS NULL OR {quoted_link}::text = '')")
+    if active_column:
+        quoted_active = _quote_identifier(active_column)
+        where_fragments.append(f"COALESCE({quoted_active}, TRUE) = TRUE")
+    where_sql = f"WHERE {' AND '.join(where_fragments)}" if where_fragments else ""
+    select_sql = ", ".join(select_parts)
+    query = text(
+        f'SELECT {select_sql} FROM public."ProductTemplate" {where_sql} ORDER BY {_quote_identifier(title_column)} ASC'
+    )
+
+    rows = conn.execute(query).mappings().all()
+    linked_items = session.exec(
+        select(HardwareItem).where(HardwareItem.makerworks_product_template_id.is_not(None))
+    ).all()
+    unlinked_merch_items = session.exec(
+        select(HardwareItem).where(HardwareItem.makerworks_product_template_id.is_(None))
+    ).all()
+    linked_by_template_id = {
+        str(item.makerworks_product_template_id): item
+        for item in linked_items
+        if item.makerworks_product_template_id
+    }
+    unlinked_merch_by_name = {
+        (item.name or "").strip().lower(): item
+        for item in unlinked_merch_items
+        if (item.category or "").strip().lower() == "merch" and (item.name or "").strip()
+    }
+
+    created = 0
+    updated = 0
+    skipped = 0
+    source_count = len(rows)
+    synced_ids: set[str] = set()
+
+    for row in rows:
+        makerworks_id = str(row.get("makerworks_id") or "").strip()
+        title = str(row.get("title") or "").strip()
+        if not makerworks_id or not title:
+            skipped += 1
+            continue
+        synced_ids.add(makerworks_id)
+        item = linked_by_template_id.get(makerworks_id)
+        if item is None:
+            item = unlinked_merch_by_name.get(title.lower())
+        quantity_on_hand = _coerce_non_negative_number(row.get("quantity_on_hand"))
+        reorder_level = _coerce_non_negative_number(row.get("reorder_level"))
+        unit_of_measure = str(row.get("unit_of_measure") or "").strip() or "piece"
+        description = str(row.get("description") or "").strip() or None
+        category = "merch"
+
+        if item:
+            item.name = title
+            item.category = category
+            item.makerworks_product_template_id = makerworks_id
+            item.unit_of_measure = unit_of_measure
+            if quantity_on_hand is not None:
+                item.quantity_on_hand = quantity_on_hand
+            if reorder_level is not None:
+                item.reorder_level = reorder_level
+            if description and not item.notes:
+                item.notes = description
+            session.add(item)
+            updated += 1
+            continue
+
+        created_item = HardwareItem(
+            name=title,
+            category=category,
+            unit_of_measure=unit_of_measure,
+            quantity_on_hand=quantity_on_hand if quantity_on_hand is not None else 0,
+            reorder_level=reorder_level if reorder_level is not None else 0,
+            notes=description,
+            makerworks_product_template_id=makerworks_id,
+        )
+        session.add(created_item)
+        created += 1
+
+    session.commit()
+
+    return {
+        "source_count": source_count,
+        "synced_count": len(synced_ids),
+        "created": created,
+        "updated": updated,
+        "skipped": skipped,
+        "quantity_source_column": quantity_column,
+        "reorder_source_column": reorder_column,
+        "unit_source_column": unit_column,
+    }
+
+
+def _fetch_table_columns(connection: Any, schema: str, table: str) -> set[str]:
+    result = connection.execute(
+        text(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = :schema AND table_name = :table
+            """
+        ),
+        {"schema": schema, "table": table},
+    )
+    return {str(row[0]) for row in result}
+
+
+def _find_matching_column(available: set[str], candidates: list[str]) -> Optional[str]:
+    lowered = {column.lower(): column for column in available}
+    for candidate in candidates:
+        found = lowered.get(candidate.lower())
+        if found:
+            return found
+    return None
+
+
+def _quote_identifier(identifier: str) -> str:
+    escaped = identifier.replace('"', '""')
+    return f'"{escaped}"'
+
+
+def _coerce_non_negative_number(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if number < 0:
+        return 0.0
+    return number

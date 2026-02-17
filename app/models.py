@@ -171,6 +171,7 @@ class HardwareItemBase(SQLModel):
 
 class HardwareItem(HardwareItemBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
+    makerworks_product_template_id: Optional[str] = Field(default=None, index=True)
     movements: List["HardwareMovement"] = Relationship(back_populates="hardware_item")
 
 
@@ -193,6 +194,7 @@ class HardwareItemUpdate(SQLModel):
 
 class HardwareItemRead(HardwareItemBase):
     id: int
+    makerworks_product_template_id: Optional[str] = None
 
 
 class HardwareMovementBase(SQLModel):

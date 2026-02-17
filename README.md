@@ -13,6 +13,7 @@ If you can use a web page, you can use StockWorks.
 ## What StockWorks can do
 - **Track filament spools**: color, material, remaining weight.
 - **Track hardware**: screws, inserts, magnets, and other parts.
+- **Sync merch from MakerWorks**: import MakerWorks merch templates into Hardware inventory.
 - **Show stock changes**: every add and remove is recorded.
 - **Create quotes**: build a material list and price estimate.
 - **Show incoming jobs**: live orders from MakerWorks and OrderWorks.
@@ -80,6 +81,16 @@ Set these variables if you want that integration:
 - `BAMBU_VIEW_ADMIN_USERNAME` and `BAMBU_VIEW_ADMIN_PASSWORD` (optional fallback if you are not using an API key)
 
 The loaded tray list appears in **Settings > Bambu View**.
+
+## MakerWorks merch sync
+If MakerWorks merch has been enabled, open **Hardware** and click **Sync MakerWorks merch**.
+
+What this does:
+- Pulls merch templates from MakerWorks `ProductTemplate`.
+- Creates or updates matching Hardware records in StockWorks.
+- Sets category to `merch` and maps quantity/reorder fields when those columns exist in MakerWorks.
+
+You can review merch separately in the **Merch** tab, which includes a dedicated inventory search bar.
 
 ## Simple tips
 - Use Dashboard first if you only have a minute.

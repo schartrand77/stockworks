@@ -118,7 +118,12 @@ const hardwareTableBody = document.querySelector("#hardware-table tbody");
 const hardwareFilterSelect = document.getElementById("hardware-filter");
 const hardwareClearBtn = document.getElementById("hardware-clear");
 const hardwareRefreshBtn = document.getElementById("hardware-refresh");
+const hardwareSyncMerchBtn = document.getElementById("hardware-sync-merch");
 const hardwareDeleteBtn = document.getElementById("hardware-delete");
+const merchTableBody = document.querySelector("#merch-table tbody");
+const merchSearchInput = document.getElementById("merch-search");
+const merchRefreshBtn = document.getElementById("merch-refresh");
+const merchSyncBtn = document.getElementById("merch-sync");
 
 // Model references
 const modelForm = document.getElementById("model-form");
@@ -208,6 +213,7 @@ const filterState = {
   inventory: { material: "all", color: "all", location: "all" },
   models: { mode: "all" },
   hardware: { mode: "all" },
+  merch: { search: "" },
   movements: { mode: "all" },
 };
 
@@ -374,6 +380,15 @@ function bindEvents() {
     modelsRefreshBtn.addEventListener("click", () => safeAsync(loadModels));
   }
   hardwareRefreshBtn.addEventListener("click", () => safeAsync(loadHardware));
+  if (hardwareSyncMerchBtn) {
+    hardwareSyncMerchBtn.addEventListener("click", () => safeAsync(syncMakerWorksMerch));
+  }
+  if (merchRefreshBtn) {
+    merchRefreshBtn.addEventListener("click", () => safeAsync(loadHardware));
+  }
+  if (merchSyncBtn) {
+    merchSyncBtn.addEventListener("click", () => safeAsync(syncMakerWorksMerch));
+  }
   if (orderworksRefreshBtn) {
     orderworksRefreshBtn.addEventListener("click", () => safeAsync(loadOrderWorksJobs));
   }
@@ -435,6 +450,9 @@ function bindEvents() {
   materialTableBody.addEventListener("click", handleMaterialRowClick);
   inventoryTableBody.addEventListener("click", handleInventoryRowClick);
   hardwareTableBody.addEventListener("click", handleHardwareRowClick);
+  if (merchTableBody) {
+    merchTableBody.addEventListener("click", handleMerchRowClick);
+  }
   if (modelsTableBody) {
     modelsTableBody.addEventListener("click", handleModelRowClick);
   }
@@ -510,6 +528,12 @@ function bindEvents() {
       filterState.hardware.mode = hardwareFilterSelect.value || "all";
       paginationState.hardware.page = 1;
       renderHardware();
+    });
+  }
+  if (merchSearchInput) {
+    merchSearchInput.addEventListener("input", () => {
+      filterState.merch.search = normalizeSearchTerm(merchSearchInput.value);
+      renderMerch();
     });
   }
   if (movementFilterSelect) {
@@ -813,6 +837,7 @@ async function loadHardware() {
   const hardware = await api("/hardware");
   state.hardware = hardware;
   renderHardware();
+  renderMerch();
   populateHardwareOptions();
   if (state.currentHardwareId && !hardware.some((item) => item.id === state.currentHardwareId)) {
     resetHardwareForm();
@@ -856,6 +881,18 @@ async function loadOrderWorksJobs({ silent = false } = {}) {
     renderOrderWorks();
   }
   renderReports();
+}
+
+async function syncMakerWorksMerch() {
+  const payload = await api("/makerworks/merch/sync", { method: "POST" });
+  await loadHardware();
+  const created = Number(payload?.created || 0);
+  const updated = Number(payload?.updated || 0);
+  const skipped = Number(payload?.skipped || 0);
+  setMessage(
+    `MakerWorks merch sync complete. Created: ${created}, updated: ${updated}, skipped: ${skipped}.`,
+    "success"
+  );
 }
 
 async function loadBambuViewFilaments({ silent = false } = {}) {
@@ -1063,6 +1100,36 @@ function filterMovements(movements) {
     filtered = filtered.filter((move) => move.movement_type === mode);
   }
   return filtered;
+}
+
+function isMerchItem(item) {
+  if (!item || typeof item !== "object") {
+    return false;
+  }
+  const category = normalizeSearchTerm(item.category);
+  if (category === "merch") {
+    return true;
+  }
+  return Boolean(item.makerworks_product_template_id);
+}
+
+function filterMerch(items) {
+  const search = filterState.merch.search;
+  const merchItems = items.filter((item) => isMerchItem(item));
+  if (!search) {
+    return merchItems;
+  }
+  return merchItems.filter((item) =>
+    matchesSearch(search, [
+      item.name,
+      item.category,
+      item.bin_location,
+      item.notes,
+      item.supplier,
+      item.manufacturer_part_number,
+      item.makerworks_product_template_id,
+    ])
+  );
 }
 
 function buildFilterOptions(items) {
@@ -1789,6 +1856,35 @@ function renderOrderWorks() {
     .join("");
 }
 
+function renderMerch() {
+  if (!merchTableBody) {
+    return;
+  }
+  const filtered = filterMerch(state.hardware);
+  if (!state.hardware.some((item) => isMerchItem(item))) {
+    merchTableBody.innerHTML = `<tr><td colspan="7" class="muted">No merch inventory recorded yet. Run MakerWorks merch sync first.</td></tr>`;
+    return;
+  }
+  if (!filtered.length) {
+    merchTableBody.innerHTML = `<tr><td colspan="7" class="muted">No merch matches your search.</td></tr>`;
+    return;
+  }
+  merchTableBody.innerHTML = filtered
+    .map(
+      (item) => `
+        <tr data-id="${item.id}">
+          <td>${escapeHtml(item.name)}</td>
+          <td>${Number(item.quantity_on_hand || 0).toFixed(2)}</td>
+          <td>${Number(item.reorder_level || 0).toFixed(2)}</td>
+          <td>${escapeHtml(item.unit_of_measure || "piece")}</td>
+          <td>${escapeHtml(item.bin_location || "")}</td>
+          <td>${escapeHtml(item.notes || "")}</td>
+          <td><button class="small-button" data-action="edit" data-id="${item.id}">Edit</button></td>
+        </tr>`
+    )
+    .join("");
+}
+
 function renderBambuView() {
   if (bambuViewStatusEl) {
     if (!state.bambuViewConfigured) {
@@ -1827,6 +1923,29 @@ function renderBambuView() {
   const rows = [];
   for (const printer of state.bambuViewPrinters) {
     const loaded = Array.isArray(printer.loaded_trays) ? printer.loaded_trays : [];
+    if (!loaded.length) {
+      const slotCount = Number(printer.ams_slots);
+      const unitCount = Number(printer.ams_units);
+      const hints = [];
+      if (Number.isFinite(slotCount)) {
+        hints.push(`slots: ${slotCount}`);
+      }
+      if (Number.isFinite(unitCount)) {
+        hints.push(`units: ${unitCount}`);
+      }
+      const stateLabel = hints.length ? `No loaded trays (${hints.join(", ")})` : "No loaded trays";
+      rows.push(`
+        <tr>
+          <td>${escapeHtml(printer.printer_name || printer.printer_id || "Printer")}</td>
+          <td><span class="muted">-</span></td>
+          <td><span class="muted">-</span></td>
+          <td><span class="muted">-</span></td>
+          <td><span class="muted">-</span></td>
+          <td><span class="muted">${escapeHtml(stateLabel)}</span></td>
+        </tr>
+      `);
+      continue;
+    }
     for (const tray of loaded) {
       const position =
         Number.isFinite(Number(tray.unit)) && Number.isFinite(Number(tray.slot)) ? `U${tray.unit} S${tray.slot}` : "-";
@@ -1848,8 +1967,12 @@ function renderBambuView() {
       `);
     }
   }
+  if (!rows.length && state.bambuViewPrinters.length) {
+    bambuViewTableBody.innerHTML = `<tr><td colspan="6" class="muted">No printer details reported by Bambu View.</td></tr>`;
+    return;
+  }
   if (!rows.length) {
-    bambuViewTableBody.innerHTML = `<tr><td colspan="6" class="muted">No loaded trays reported by Bambu View.</td></tr>`;
+    bambuViewTableBody.innerHTML = `<tr><td colspan="6" class="muted">No Bambu View data loaded yet.</td></tr>`;
     return;
   }
   bambuViewTableBody.innerHTML = rows.join("");
@@ -2693,6 +2816,16 @@ async function loadMaterialCostHistory(materialId) {
       .join("");
   } catch (err) {
     materialCostHistoryList.textContent = "Unable to load cost history.";
+  }
+}
+
+function handleMerchRowClick(event) {
+  const button = event.target.closest("button[data-action]");
+  if (!button) return;
+  const id = Number(button.dataset.id);
+  if (button.dataset.action === "edit") {
+    setActiveTab("hardware-panel");
+    startHardwareEdit(id);
   }
 }
 
