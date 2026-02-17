@@ -8,13 +8,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, List, Optional
 
-from fastapi import Depends, FastAPI, Form, HTTPException, Request, status
+from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import text
+from sqlalchemy import or_, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.orm import selectinload
 from sqlmodel import Session, func, select
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -53,6 +54,10 @@ from .models import (
     MaterialCreate,
     MaterialRead,
     MaterialUpdate,
+    PaginatedHardwareRead,
+    PaginatedInventoryRead,
+    PaginatedMaterialsRead,
+    PaginatedModelsRead,
     MaterialCostHistory,
     MaterialCostHistoryCreate,
     MaterialCostHistoryRead,
@@ -217,10 +222,36 @@ def create_material(
     return material
 
 
-@app.get("/materials", response_model=List[MaterialRead])
-def list_materials(session: Session = Depends(get_session), _: bool = Depends(require_auth)):
-    materials = session.exec(select(Material).order_by(Material.name)).all()
-    return materials
+@app.get("/materials", response_model=PaginatedMaterialsRead)
+def list_materials(
+    limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    search: str | None = Query(default=None, min_length=1),
+    session: Session = Depends(get_session),
+    _: bool = Depends(require_auth),
+):
+    filters = []
+    if search:
+        pattern = f"%{search.strip()}%"
+        filters.append(
+            or_(
+                Material.name.ilike(pattern),
+                Material.brand.ilike(pattern),
+                Material.category.ilike(pattern),
+                Material.color.ilike(pattern),
+                Material.supplier.ilike(pattern),
+                Material.filament_type.ilike(pattern),
+            )
+        )
+    statement = select(Material).order_by(Material.name).offset(offset).limit(limit)
+    if filters:
+        statement = statement.where(*filters)
+    total_statement = select(func.count()).select_from(Material)
+    if filters:
+        total_statement = total_statement.where(*filters)
+    materials = session.exec(statement).all()
+    total = session.exec(total_statement).one()
+    return PaginatedMaterialsRead(items=materials, total=total, limit=limit, offset=offset)
 
 
 @app.get("/materials/{material_id}", response_model=MaterialRead)
@@ -360,10 +391,43 @@ def create_inventory_item(
     return inventory_item
 
 
-@app.get("/inventory", response_model=List[InventoryItemRead])
-def list_inventory_items(session: Session = Depends(get_session), _: bool = Depends(require_auth)):
-    items = session.exec(select(InventoryItem)).all()
-    return items
+@app.get("/inventory", response_model=PaginatedInventoryRead)
+def list_inventory_items(
+    limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    search: str | None = Query(default=None, min_length=1),
+    session: Session = Depends(get_session),
+    _: bool = Depends(require_auth),
+):
+    filters = []
+    if search:
+        pattern = f"%{search.strip()}%"
+        filters.append(
+            or_(
+                InventoryItem.location.ilike(pattern),
+                InventoryItem.spool_serial.ilike(pattern),
+                Material.name.ilike(pattern),
+                Material.color.ilike(pattern),
+            )
+        )
+    statement = (
+        select(InventoryItem)
+        .join(Material, InventoryItem.material_id == Material.id, isouter=True)
+        .options(selectinload(InventoryItem.material))
+        .order_by(InventoryItem.id)
+        .offset(offset)
+        .limit(limit)
+    )
+    if filters:
+        statement = statement.where(*filters)
+    total_statement = select(func.count()).select_from(InventoryItem).join(
+        Material, InventoryItem.material_id == Material.id, isouter=True
+    )
+    if filters:
+        total_statement = total_statement.where(*filters)
+    items = session.exec(statement).all()
+    total = session.exec(total_statement).one()
+    return PaginatedInventoryRead(items=items, total=total, limit=limit, offset=offset)
 
 
 @app.get("/inventory/{item_id}", response_model=InventoryItemRead)
@@ -455,10 +519,35 @@ def create_hardware_item(
     return item
 
 
-@app.get("/hardware", response_model=List[HardwareItemRead])
-def list_hardware_items(session: Session = Depends(get_session), _: bool = Depends(require_auth)):
-    statement = select(HardwareItem).order_by(HardwareItem.name)
-    return session.exec(statement).all()
+@app.get("/hardware", response_model=PaginatedHardwareRead)
+def list_hardware_items(
+    limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    search: str | None = Query(default=None, min_length=1),
+    session: Session = Depends(get_session),
+    _: bool = Depends(require_auth),
+):
+    filters = []
+    if search:
+        pattern = f"%{search.strip()}%"
+        filters.append(
+            or_(
+                HardwareItem.name.ilike(pattern),
+                HardwareItem.category.ilike(pattern),
+                HardwareItem.supplier.ilike(pattern),
+                HardwareItem.manufacturer_part_number.ilike(pattern),
+                HardwareItem.bin_location.ilike(pattern),
+            )
+        )
+    statement = select(HardwareItem).order_by(HardwareItem.name).offset(offset).limit(limit)
+    if filters:
+        statement = statement.where(*filters)
+    total_statement = select(func.count()).select_from(HardwareItem)
+    if filters:
+        total_statement = total_statement.where(*filters)
+    items = session.exec(statement).all()
+    total = session.exec(total_statement).one()
+    return PaginatedHardwareRead(items=items, total=total, limit=limit, offset=offset)
 
 
 @app.get("/hardware/{hardware_id}", response_model=HardwareItemRead)
@@ -554,11 +643,41 @@ def create_print_model(
     return _model_read_with_totals(session, model)
 
 
-@app.get("/models", response_model=List[PrintModelRead])
-def list_print_models(session: Session = Depends(get_session), _: bool = Depends(require_auth)):
-    models = session.exec(select(PrintModel).order_by(PrintModel.name)).all()
+@app.get("/models", response_model=PaginatedModelsRead)
+def list_print_models(
+    limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    search: str | None = Query(default=None, min_length=1),
+    session: Session = Depends(get_session),
+    _: bool = Depends(require_auth),
+):
+    filters = []
+    if search:
+        pattern = f"%{search.strip()}%"
+        filters.append(
+            or_(
+                PrintModel.name.ilike(pattern),
+                PrintModel.category.ilike(pattern),
+                PrintModel.sku.ilike(pattern),
+                PrintModel.designer.ilike(pattern),
+                PrintModel.platform.ilike(pattern),
+            )
+        )
+    statement = select(PrintModel).order_by(PrintModel.name).offset(offset).limit(limit)
+    if filters:
+        statement = statement.where(*filters)
+    models = session.exec(statement).all()
+    total_statement = select(func.count()).select_from(PrintModel)
+    if filters:
+        total_statement = total_statement.where(*filters)
+    total = session.exec(total_statement).one()
     totals = _model_sales_summary(session, [model.id for model in models if model.id])
-    return [_model_read_with_totals(session, model, totals) for model in models]
+    return PaginatedModelsRead(
+        items=[_model_read_with_totals(session, model, totals) for model in models],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @app.get("/models/{model_id}", response_model=PrintModelRead)

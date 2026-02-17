@@ -6,10 +6,10 @@ from sqlmodel import Field, Relationship, SQLModel
 
 
 class MaterialBase(SQLModel):
-    name: str
+    name: str = Field(index=True)
     brand: Optional[str] = None
     filament_type: str
-    category: Optional[str] = Field(default=None, description="Finishes like basic, matte, silk, cf, etc.")
+    category: Optional[str] = Field(default=None, index=True, description="Finishes like basic, matte, silk, cf, etc.")
     color: str
     color_hex: Optional[str] = Field(default=None, description="Hex code for UI color swatches")
     supplier: Optional[str] = None
@@ -74,7 +74,7 @@ class MaterialCostHistoryRead(MaterialCostHistoryBase):
 
 
 class InventoryItemBase(SQLModel):
-    location: str
+    location: str = Field(index=True)
     quantity_grams: float = Field(ge=0, description="Current stock level in grams")
     reorder_level: float = Field(ge=0, description="Threshold where replenishment is required")
     spool_serial: Optional[str] = Field(default=None, description="ID marked on the spool")
@@ -83,7 +83,7 @@ class InventoryItemBase(SQLModel):
 
 class InventoryItem(InventoryItemBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    material_id: int = Field(foreign_key="material.id")
+    material_id: int = Field(foreign_key="material.id", index=True)
 
     material: Optional[Material] = Relationship(back_populates="inventory_items")
     movements: List["StockMovement"] = Relationship(back_populates="inventory_item")
@@ -117,8 +117,8 @@ class StockMovementBase(SQLModel):
 
 class StockMovement(StockMovementBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    inventory_item_id: int = Field(foreign_key="inventoryitem.id")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    inventory_item_id: int = Field(foreign_key="inventoryitem.id", index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
 
     inventory_item: Optional[InventoryItem] = Relationship(back_populates="movements")
 
@@ -157,8 +157,8 @@ class PricingResponse(SQLModel):
 
 
 class HardwareItemBase(SQLModel):
-    name: str
-    category: Optional[str] = Field(default=None, description="E.g. magnets, inserts, screws")
+    name: str = Field(index=True)
+    category: Optional[str] = Field(default=None, index=True, description="E.g. magnets, inserts, screws")
     supplier: Optional[str] = None
     manufacturer_part_number: Optional[str] = Field(default=None, description="Vendor or manufacturer reference")
     unit_of_measure: str = Field(default="piece", description="e.g. piece, set, pack")
@@ -206,8 +206,8 @@ class HardwareMovementBase(SQLModel):
 
 class HardwareMovement(HardwareMovementBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    hardware_item_id: int = Field(foreign_key="hardwareitem.id")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    hardware_item_id: int = Field(foreign_key="hardwareitem.id", index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
 
     hardware_item: Optional[HardwareItem] = Relationship(back_populates="movements")
 
@@ -223,8 +223,8 @@ class HardwareMovementRead(HardwareMovementBase):
 
 
 class PrintModelBase(SQLModel):
-    name: str
-    category: Optional[str] = Field(default=None, description="Model grouping such as toys, props, terrain")
+    name: str = Field(index=True)
+    category: Optional[str] = Field(default=None, index=True, description="Model grouping such as toys, props, terrain")
     sku: Optional[str] = Field(default=None, description="Internal SKU or listing ID")
     designer: Optional[str] = Field(default=None, description="Designer or source")
     platform: Optional[str] = Field(default=None, description="Marketplace or store listing")
@@ -274,8 +274,8 @@ class PrintModelSaleBase(SQLModel):
 
 class PrintModelSale(PrintModelSaleBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    model_id: int = Field(foreign_key="printmodel.id")
-    sold_at: datetime = Field(default_factory=datetime.utcnow)
+    model_id: int = Field(foreign_key="printmodel.id", index=True)
+    sold_at: datetime = Field(default_factory=datetime.utcnow, index=True)
 
     model: Optional[PrintModel] = Relationship(back_populates="sales")
 
@@ -288,3 +288,31 @@ class PrintModelSaleRead(PrintModelSaleBase):
     id: int
     model_id: int
     sold_at: datetime
+
+
+class PaginatedMaterialsRead(SQLModel):
+    items: List[MaterialRead]
+    total: int
+    limit: int
+    offset: int
+
+
+class PaginatedInventoryRead(SQLModel):
+    items: List[InventoryItemRead]
+    total: int
+    limit: int
+    offset: int
+
+
+class PaginatedHardwareRead(SQLModel):
+    items: List[HardwareItemRead]
+    total: int
+    limit: int
+    offset: int
+
+
+class PaginatedModelsRead(SQLModel):
+    items: List[PrintModelRead]
+    total: int
+    limit: int
+    offset: int

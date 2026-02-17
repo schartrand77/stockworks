@@ -221,6 +221,14 @@ const sortState = {
   materials: { key: "name", direction: "asc" },
 };
 
+const derivedViewCache = {
+  materialsFilter: null,
+  materialsSort: null,
+  inventoryFilter: null,
+  modelsFilter: null,
+  hardwareFilter: null,
+};
+
 const DEFAULT_BARCODE_FORMATS = [
   "code_128",
   "code_39",
@@ -739,13 +747,14 @@ async function handleInstallButtonClick() {
 async function refreshAll() {
   try {
     await Promise.all([
-      loadMaterials(),
-      loadInventory(),
-      loadModels(),
-      loadHardware(),
-      loadOrderWorksJobs({ silent: true }).catch(() => null),
+      loadMaterials({ suppressReports: true }),
+      loadInventory({ suppressReports: true }),
+      loadModels({ suppressReports: true }),
+      loadHardware({ suppressReports: true }),
+      loadOrderWorksJobs({ silent: true, suppressReports: true }).catch(() => null),
       loadBambuViewFilaments({ silent: true }).catch(() => null),
     ]);
+    renderReports();
     setMessage("Data refreshed.", "success");
   } catch (error) {
     console.error(error);
@@ -755,26 +764,28 @@ async function refreshAll() {
 
 async function refreshReports() {
   await Promise.all([
-    loadMaterials(),
-    loadInventory(),
-    loadModels(),
-    loadHardware(),
-    loadOrderWorksJobs({ silent: true }).catch(() => null),
+    loadMaterials({ suppressReports: true }),
+    loadInventory({ suppressReports: true }),
+    loadModels({ suppressReports: true }),
+    loadHardware({ suppressReports: true }),
+    loadOrderWorksJobs({ silent: true, suppressReports: true }).catch(() => null),
     loadBambuViewFilaments({ silent: true }).catch(() => null),
   ]);
   renderReports();
   setMessage("Reports updated.", "success");
 }
 
-async function loadMaterials() {
-  const materials = await api("/materials");
+async function loadMaterials({ suppressReports = false } = {}) {
+  const materials = await fetchAllPages("/materials");
   state.materials = materials;
   renderMaterials();
   populateMaterialOptions();
   if (state.currentMaterialId && !materials.some((m) => m.id === state.currentMaterialId)) {
     resetMaterialForm();
   }
-  renderReports();
+  if (!suppressReports) {
+    renderReports();
+  }
 }
 
 async function loadFilamentTypes() {
@@ -790,8 +801,8 @@ async function loadFilamentTypes() {
   }
 }
 
-async function loadInventory() {
-  const inventory = await api("/inventory");
+async function loadInventory({ suppressReports = false } = {}) {
+  const inventory = await fetchAllPages("/inventory");
   state.inventory = inventory;
   populateInventoryFilters();
   renderInventory();
@@ -802,18 +813,20 @@ async function loadInventory() {
   if (state.currentMovementItemId) {
     const stillExists = inventory.some((i) => i.id === state.currentMovementItemId);
     if (stillExists) {
-      await loadMovements(state.currentMovementItemId);
+      await loadMovements(state.currentMovementItemId, { suppressReports: true });
     } else {
       movementInventorySelect.value = "";
       state.currentMovementItemId = null;
       renderMovements([]);
     }
   }
-  renderReports();
+  if (!suppressReports) {
+    renderReports();
+  }
 }
 
-async function loadModels() {
-  const models = await api("/models");
+async function loadModels({ suppressReports = false } = {}) {
+  const models = await fetchAllPages("/models");
   state.models = models;
   renderModels();
   populateModelOptions();
@@ -823,18 +836,20 @@ async function loadModels() {
   if (state.currentModelSaleId) {
     const stillExists = models.some((model) => model.id === state.currentModelSaleId);
     if (stillExists) {
-      await loadModelSales(state.currentModelSaleId);
+      await loadModelSales(state.currentModelSaleId, { suppressReports: true });
     } else if (modelSaleSelect) {
       modelSaleSelect.value = "";
       state.currentModelSaleId = null;
       renderModelSales([]);
     }
   }
-  renderReports();
+  if (!suppressReports) {
+    renderReports();
+  }
 }
 
-async function loadHardware() {
-  const hardware = await api("/hardware");
+async function loadHardware({ suppressReports = false } = {}) {
+  const hardware = await fetchAllPages("/hardware");
   state.hardware = hardware;
   renderHardware();
   renderMerch();
@@ -845,17 +860,19 @@ async function loadHardware() {
   if (state.currentHardwareMovementId) {
     const stillExists = hardware.some((item) => item.id === state.currentHardwareMovementId);
     if (stillExists) {
-      await loadHardwareMovements(state.currentHardwareMovementId);
+      await loadHardwareMovements(state.currentHardwareMovementId, { suppressReports: true });
     } else {
       hardwareMovementSelect.value = "";
       state.currentHardwareMovementId = null;
       renderHardwareMovements([]);
     }
   }
-  renderReports();
+  if (!suppressReports) {
+    renderReports();
+  }
 }
 
-async function loadOrderWorksJobs({ silent = false } = {}) {
+async function loadOrderWorksJobs({ silent = false, suppressReports = false } = {}) {
   const shouldFetch =
     orderworksTableBody || reportOrderworksMetricsEl || reportOrderworksStatusEl || reportOrderworksRevenueEl;
   if (!shouldFetch) {
@@ -880,7 +897,9 @@ async function loadOrderWorksJobs({ silent = false } = {}) {
   if (orderworksTableBody) {
     renderOrderWorks();
   }
-  renderReports();
+  if (!suppressReports) {
+    renderReports();
+  }
 }
 
 async function syncMakerWorksMerch() {
@@ -921,11 +940,13 @@ async function loadBambuViewFilaments({ silent = false } = {}) {
   renderBambuView();
 }
 
-async function loadMovements(itemId) {
+async function loadMovements(itemId, { suppressReports = false } = {}) {
   const results = await api(`/inventory/${itemId}/movements`);
   state.lastInventoryMovements = Array.isArray(results) ? results : [];
   renderMovements(results);
-  renderReports();
+  if (!suppressReports) {
+    renderReports();
+  }
 }
 
 function formatColorChip(colorName, colorHex) {
@@ -953,24 +974,36 @@ function matchesSearch(needle, values) {
   return values.some((value) => String(value || "").toLowerCase().includes(needle));
 }
 
+function memoizedArray(cacheKey, sourceItems, signature, compute) {
+  const cached = derivedViewCache[cacheKey];
+  if (cached && cached.sourceItems === sourceItems && cached.signature === signature) {
+    return cached.result;
+  }
+  const result = compute();
+  derivedViewCache[cacheKey] = { sourceItems, signature, result };
+  return result;
+}
+
 function filterMaterials(items) {
   const search = filterState.materials.search;
-  if (!search) {
-    return items;
-  }
-  return items.filter((material) =>
-    matchesSearch(search, [
-      material.name,
-      material.brand,
-      material.filament_type,
-      material.category,
-      material.color,
-      material.color_hex,
-      material.supplier,
-      material.barcode,
-      material.notes,
-    ])
-  );
+  return memoizedArray("materialsFilter", items, search || "", () => {
+    if (!search) {
+      return items;
+    }
+    return items.filter((material) =>
+      matchesSearch(search, [
+        material.name,
+        material.brand,
+        material.filament_type,
+        material.category,
+        material.color,
+        material.color_hex,
+        material.supplier,
+        material.barcode,
+        material.notes,
+      ])
+    );
+  });
 }
 
 function compareText(a, b) {
@@ -1007,26 +1040,29 @@ function getMaterialSortValue(material, key) {
 
 function sortMaterials(items) {
   const { key, direction } = sortState.materials;
-  if (!key) {
-    return items;
-  }
-  const directionFactor = direction === "desc" ? -1 : 1;
-  const sorted = [...items];
-  sorted.sort((a, b) => {
-    const aValue = getMaterialSortValue(a, key);
-    const bValue = getMaterialSortValue(b, key);
-    let comparison = 0;
-    if (typeof aValue === "number" && typeof bValue === "number") {
-      comparison = aValue - bValue;
-    } else {
-      comparison = compareText(aValue, bValue);
+  const signature = `${key || ""}:${direction || "asc"}`;
+  return memoizedArray("materialsSort", items, signature, () => {
+    if (!key) {
+      return items;
     }
-    if (comparison !== 0) {
-      return comparison * directionFactor;
-    }
-    return compareText(a.name, b.name) * directionFactor;
+    const directionFactor = direction === "desc" ? -1 : 1;
+    const sorted = [...items];
+    sorted.sort((a, b) => {
+      const aValue = getMaterialSortValue(a, key);
+      const bValue = getMaterialSortValue(b, key);
+      let comparison = 0;
+      if (typeof aValue === "number" && typeof bValue === "number") {
+        comparison = aValue - bValue;
+      } else {
+        comparison = compareText(aValue, bValue);
+      }
+      if (comparison !== 0) {
+        return comparison * directionFactor;
+      }
+      return compareText(a.name, b.name) * directionFactor;
+    });
+    return sorted;
   });
-  return sorted;
 }
 
 function updateMaterialSortHeaders() {
@@ -1054,43 +1090,50 @@ function filterInventory(items) {
   const material = filterState.inventory.material;
   const color = filterState.inventory.color;
   const location = filterState.inventory.location;
-  let filtered = items;
-  if (material !== "all") {
-    filtered = filtered.filter((item) => normalizeSearchTerm(item.material?.name) === material);
-  }
-  if (color !== "all") {
-    filtered = filtered.filter((item) => normalizeSearchTerm(item.material?.color) === color);
-  }
-  if (location !== "all") {
-    filtered = filtered.filter((item) => normalizeSearchTerm(item.location) === location);
-  }
-  return filtered;
+  const signature = `${material}|${color}|${location}`;
+  return memoizedArray("inventoryFilter", items, signature, () => {
+    let filtered = items;
+    if (material !== "all") {
+      filtered = filtered.filter((item) => normalizeSearchTerm(item.material?.name) === material);
+    }
+    if (color !== "all") {
+      filtered = filtered.filter((item) => normalizeSearchTerm(item.material?.color) === color);
+    }
+    if (location !== "all") {
+      filtered = filtered.filter((item) => normalizeSearchTerm(item.location) === location);
+    }
+    return filtered;
+  });
 }
 
 function filterModels(items) {
   const mode = filterState.models.mode;
-  let filtered = items;
-  if (mode === "active") {
-    filtered = filtered.filter((model) => model.active);
-  } else if (mode === "inactive") {
-    filtered = filtered.filter((model) => !model.active);
-  }
-  return filtered;
+  return memoizedArray("modelsFilter", items, mode || "all", () => {
+    let filtered = items;
+    if (mode === "active") {
+      filtered = filtered.filter((model) => model.active);
+    } else if (mode === "inactive") {
+      filtered = filtered.filter((model) => !model.active);
+    }
+    return filtered;
+  });
 }
 
 function filterHardware(items) {
   const mode = filterState.hardware.mode;
-  let filtered = items;
-  if (mode === "below-reorder") {
-    filtered = filtered.filter((item) => {
-      const reorder = Number(item.reorder_level || 0);
-      const qty = Number(item.quantity_on_hand || 0);
-      return reorder > 0 && Number.isFinite(qty) && qty <= reorder;
-    });
-  } else if (mode === "no-reorder") {
-    filtered = filtered.filter((item) => Number(item.reorder_level || 0) <= 0);
-  }
-  return filtered;
+  return memoizedArray("hardwareFilter", items, mode || "all", () => {
+    let filtered = items;
+    if (mode === "below-reorder") {
+      filtered = filtered.filter((item) => {
+        const reorder = Number(item.reorder_level || 0);
+        const qty = Number(item.quantity_on_hand || 0);
+        return reorder > 0 && Number.isFinite(qty) && qty <= reorder;
+      });
+    } else if (mode === "no-reorder") {
+      filtered = filtered.filter((item) => Number(item.reorder_level || 0) <= 0);
+    }
+    return filtered;
+  });
 }
 
 function filterMovements(movements) {
@@ -2608,11 +2651,13 @@ function resetModelForm() {
   state.currentModelId = null;
 }
 
-async function loadModelSales(modelId) {
+async function loadModelSales(modelId, { suppressReports = false } = {}) {
   const sales = await api(`/models/${modelId}/sales`);
   state.lastModelSales = Array.isArray(sales) ? sales : [];
   renderModelSales(sales);
-  renderReports();
+  if (!suppressReports) {
+    renderReports();
+  }
 }
 
 function renderModelSales(sales) {
@@ -2641,11 +2686,13 @@ function renderModelSales(sales) {
     .join("");
 }
 
-async function loadHardwareMovements(itemId) {
+async function loadHardwareMovements(itemId, { suppressReports = false } = {}) {
   const movements = await api(`/hardware/${itemId}/movements`);
   state.lastHardwareMovements = Array.isArray(movements) ? movements : [];
   renderHardwareMovements(movements);
-  renderReports();
+  if (!suppressReports) {
+    renderReports();
+  }
 }
 
 function renderHardwareMovements(movements) {
@@ -3196,6 +3243,33 @@ async function api(path, { method = "GET", body, headers } = {}) {
     return JSON.parse(raw);
   }
   return raw;
+}
+
+async function fetchAllPages(path, { pageSize = 200 } = {}) {
+  const allItems = [];
+  let offset = 0;
+  while (true) {
+    const separator = path.includes("?") ? "&" : "?";
+    const payload = await api(`${path}${separator}limit=${pageSize}&offset=${offset}`);
+    if (Array.isArray(payload)) {
+      return payload;
+    }
+    const pageItems = Array.isArray(payload?.items) ? payload.items : [];
+    const total = Number(payload?.total);
+    allItems.push(...pageItems);
+    if (!Number.isFinite(total)) {
+      if (pageItems.length < pageSize) {
+        break;
+      }
+    } else if (allItems.length >= total || pageItems.length === 0) {
+      break;
+    }
+    offset += pageItems.length;
+    if (!pageItems.length) {
+      break;
+    }
+  }
+  return allItems;
 }
 
 function safeAsync(fn) {

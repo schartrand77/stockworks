@@ -6,7 +6,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator, Optional, Tuple
 
-from sqlmodel import Session, SQLModel, create_engine, select
+from sqlalchemy import event
+from sqlmodel import Session, SQLModel, create_engine
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -66,7 +67,9 @@ def create_db_engine():
         schema_option = f"-c search_path={schema}"
         existing_options = connect_args.get("options")
         connect_args["options"] = f"{existing_options} {schema_option}".strip() if existing_options else schema_option
-    return create_engine(database_url, connect_args=connect_args)
+    engine = create_engine(database_url, connect_args=connect_args)
+    _configure_sqlite_connection(engine, database_url)
+    return engine
 
 
 engine = create_db_engine()
@@ -78,6 +81,8 @@ def init_db() -> None:
     global _DB_READY
     _ensure_schema_exists()
     SQLModel.metadata.create_all(engine)
+    _ensure_sqlite_pragmas()
+    _ensure_performance_indexes()
     _ensure_material_columns()
     _ensure_hardware_columns()
     _DB_READY = True
@@ -167,3 +172,57 @@ def _ensure_hardware_columns() -> None:
             table_name = f"{quoted_schema}.hardwareitem"
             for column, ddl in desired_columns.items():
                 conn.exec_driver_sql(f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS {column} {ddl}")
+
+
+def _configure_sqlite_connection(db_engine, database_url: str) -> None:
+    if not database_url.startswith("sqlite"):
+        return
+
+    @event.listens_for(db_engine, "connect")
+    def _set_sqlite_runtime_pragmas(dbapi_connection, _connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA temp_store=MEMORY")
+        cursor.close()
+
+
+def _ensure_sqlite_pragmas() -> None:
+    backend = engine.url.get_backend_name()
+    if backend != "sqlite":
+        return
+    with engine.begin() as conn:
+        conn.exec_driver_sql("PRAGMA journal_mode=WAL")
+
+
+def _ensure_performance_indexes() -> None:
+    backend = engine.url.get_backend_name()
+    if backend == "sqlite":
+        statements = [
+            "CREATE INDEX IF NOT EXISTS ix_material_name ON material (name)",
+            "CREATE INDEX IF NOT EXISTS ix_material_category ON material (category)",
+            "CREATE INDEX IF NOT EXISTS ix_inventoryitem_material_location ON inventoryitem (material_id, location)",
+            "CREATE INDEX IF NOT EXISTS ix_stockmovement_item_created ON stockmovement (inventory_item_id, created_at)",
+            "CREATE INDEX IF NOT EXISTS ix_hardwareitem_category_name ON hardwareitem (category, name)",
+            "CREATE INDEX IF NOT EXISTS ix_hardwaremovement_item_created ON hardwaremovement (hardware_item_id, created_at)",
+            "CREATE INDEX IF NOT EXISTS ix_printmodelsale_model_sold ON printmodelsale (model_id, sold_at)",
+        ]
+        with engine.begin() as conn:
+            for statement in statements:
+                conn.exec_driver_sql(statement)
+        return
+    if backend.startswith("postgres"):
+        schema = (DB_SCHEMA or "public").strip() or "public"
+        quoted_schema = engine.dialect.identifier_preparer.quote(schema)
+        statements = [
+            f"CREATE INDEX IF NOT EXISTS ix_material_name ON {quoted_schema}.material (name)",
+            f"CREATE INDEX IF NOT EXISTS ix_material_category ON {quoted_schema}.material (category)",
+            f"CREATE INDEX IF NOT EXISTS ix_inventoryitem_material_location ON {quoted_schema}.inventoryitem (material_id, location)",
+            f"CREATE INDEX IF NOT EXISTS ix_stockmovement_item_created ON {quoted_schema}.stockmovement (inventory_item_id, created_at)",
+            f"CREATE INDEX IF NOT EXISTS ix_hardwareitem_category_name ON {quoted_schema}.hardwareitem (category, name)",
+            f"CREATE INDEX IF NOT EXISTS ix_hardwaremovement_item_created ON {quoted_schema}.hardwaremovement (hardware_item_id, created_at)",
+            f"CREATE INDEX IF NOT EXISTS ix_printmodelsale_model_sold ON {quoted_schema}.printmodelsale (model_id, sold_at)",
+        ]
+        with engine.begin() as conn:
+            for statement in statements:
+                conn.exec_driver_sql(statement)
