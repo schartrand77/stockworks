@@ -13,7 +13,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlmodel import Session, func, select
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -538,6 +539,8 @@ def create_print_model(
     data["sku"] = normalize_sku(data.get("sku"))
     model = PrintModel(**data)
     session.add(model)
+    session.flush()
+    _sync_model_to_makerworks_product_template(session, model)
     session.commit()
     session.refresh(model)
     return _model_read_with_totals(session, model)
@@ -841,3 +844,98 @@ def _model_read_with_totals(
         data.total_sold = int(totals[0] or 0)
         data.total_revenue = float(totals[1] or 0)
     return data
+
+
+def _sync_model_to_makerworks_product_template(session: Session, model: PrintModel) -> None:
+    if model.id is None:
+        return
+    bind = session.get_bind()
+    if bind is None or bind.dialect.name != "postgresql":
+        return
+    conn = session.connection()
+    exists = conn.execute(
+        text(
+            """
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_name = 'ProductTemplate'
+            """
+        )
+    ).first()
+    if not exists:
+        return
+
+    description = (model.notes or "").strip() or (model.category or "").strip() or None
+    now = datetime.utcnow()
+    existing = conn.execute(
+        text(
+            """
+            SELECT "id"
+            FROM public."ProductTemplate"
+            WHERE "stockworksInventoryItemId" = :model_id
+            LIMIT 1
+            """
+        ),
+        {"model_id": model.id},
+    ).first()
+
+    try:
+        if existing:
+            conn.execute(
+                text(
+                    """
+                    UPDATE public."ProductTemplate"
+                    SET "title" = :title,
+                        "description" = :description,
+                        "isActive" = :is_active,
+                        "updatedAt" = :updated_at
+                    WHERE "id" = :product_id
+                    """
+                ),
+                {
+                    "title": model.name,
+                    "description": description,
+                    "is_active": bool(model.active),
+                    "updated_at": now,
+                    "product_id": existing[0],
+                },
+            )
+            return
+
+        conn.execute(
+            text(
+                """
+                INSERT INTO public."ProductTemplate" (
+                    "id",
+                    "title",
+                    "description",
+                    "isActive",
+                    "createdAt",
+                    "updatedAt",
+                    "stockworksInventoryItemId"
+                ) VALUES (
+                    :id,
+                    :title,
+                    :description,
+                    :is_active,
+                    :created_at,
+                    :updated_at,
+                    :stockworks_inventory_item_id
+                )
+                """
+            ),
+            {
+                "id": f"stockworks-model-{model.id}",
+                "title": model.name,
+                "description": description,
+                "is_active": bool(model.active),
+                "created_at": now,
+                "updated_at": now,
+                "stockworks_inventory_item_id": model.id,
+            },
+        )
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Failed to sync model to MakerWorks ProductTemplate: {exc}",
+        ) from exc
