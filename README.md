@@ -91,6 +91,7 @@ What this does:
 - Sets category to `merch` and maps quantity/reorder fields when those columns exist in MakerWorks.
 - Writes merch quantity changes (and merch item edits) back to MakerWorks `ProductTemplate` for linked merch items.
 - For merch variants (same item/style/color with different sizes), StockWorks writes all sibling variant quantities so MakerWorks size availability stays accurate (e.g., only `L` in stock means other sizes are sold out).
+- New merch created in StockWorks is also created in MakerWorks `ProductTemplate` automatically (catalog image remains unset until added in MakerWorks).
 
 You can manage merch directly in the **Merch** tab (add, edit, delete) and use the dedicated inventory search bar.
 Merch records support variant details such as category, color, size, style, and SKU.

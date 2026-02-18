@@ -514,6 +514,13 @@ def create_hardware_item(
 ):
     item = HardwareItem.from_orm(payload)
     session.add(item)
+    session.flush()
+    _sync_hardware_item_to_makerworks_product_template(
+        session,
+        item,
+        include_catalog_fields=True,
+        allow_create=True,
+    )
     session.commit()
     session.refresh(item)
     return item
@@ -1086,10 +1093,9 @@ def _sync_hardware_item_to_makerworks_product_template(
     item: HardwareItem,
     *,
     include_catalog_fields: bool = True,
+    allow_create: bool = False,
 ) -> None:
     template_id = (item.makerworks_product_template_id or "").strip()
-    if not template_id:
-        return
     bind = session.get_bind()
     if bind is None or bind.dialect.name != "postgresql":
         return
@@ -1120,6 +1126,11 @@ def _sync_hardware_item_to_makerworks_product_template(
 
     title_column = _find_matching_column(available_columns, ["title", "name"])
     description_column = _find_matching_column(available_columns, ["description", "details"])
+    active_column = _find_matching_column(available_columns, ["isActive", "active", "enabled"])
+    stockworks_link_column = _find_matching_column(
+        available_columns,
+        ["stockworksInventoryItemId", "stockworks_inventory_item_id"],
+    )
     quantity_column = _find_matching_column(
         available_columns,
         [
@@ -1148,7 +1159,58 @@ def _sync_hardware_item_to_makerworks_product_template(
     )
     reorder_column = _find_matching_column(available_columns, ["reorderLevel", "reorderPoint", "restockThreshold"])
     unit_column = _find_matching_column(available_columns, ["unitOfMeasure", "uom", "unit"])
+    created_at_column = _find_matching_column(available_columns, ["createdAt", "created_at"])
     updated_at_column = _find_matching_column(available_columns, ["updatedAt", "updated_at"])
+
+    if not template_id:
+        if not allow_create:
+            return
+        category = (item.category or "").strip().lower()
+        if category != "merch" or item.id is None:
+            return
+        if not title_column:
+            return
+        template_id = f"stockworks-merch-{item.id}"
+        now = datetime.utcnow()
+        insert_columns = [id_column, title_column]
+        insert_values = [":id", ":title"]
+        insert_params: dict[str, Any] = {"id": template_id, "title": item.name}
+        if description_column:
+            insert_columns.append(description_column)
+            insert_values.append(":description")
+            insert_params["description"] = (item.notes or "").strip() or None
+        if active_column:
+            insert_columns.append(active_column)
+            insert_values.append(":is_active")
+            insert_params["is_active"] = True
+        if stockworks_link_column:
+            insert_columns.append(stockworks_link_column)
+            insert_values.append(":stockworks_inventory_item_id")
+            insert_params["stockworks_inventory_item_id"] = item.id
+        if created_at_column:
+            insert_columns.append(created_at_column)
+            insert_values.append(":created_at")
+            insert_params["created_at"] = now
+        if updated_at_column:
+            insert_columns.append(updated_at_column)
+            insert_values.append(":updated_at")
+            insert_params["updated_at"] = now
+        try:
+            conn.execute(
+                text(
+                    f'INSERT INTO public."ProductTemplate" ('
+                    f'{", ".join(_quote_identifier(col) for col in insert_columns)}'
+                    f') VALUES ({", ".join(insert_values)})'
+                ),
+                insert_params,
+            )
+        except SQLAlchemyError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Failed to create merch item in MakerWorks ProductTemplate: {exc}",
+            ) from exc
+        item.makerworks_product_template_id = template_id
+        session.add(item)
 
     set_parts: list[str] = []
     params: dict[str, Any] = {"makerworks_id": template_id}
@@ -1228,7 +1290,15 @@ def _sync_merch_variant_family_to_makerworks(
 ) -> None:
     template_id = (item.makerworks_product_template_id or "").strip()
     if not template_id:
-        return
+        _sync_hardware_item_to_makerworks_product_template(
+            session,
+            item,
+            include_catalog_fields=include_catalog_fields,
+            allow_create=True,
+        )
+        template_id = (item.makerworks_product_template_id or "").strip()
+        if not template_id:
+            return
 
     category = (item.category or "").strip().lower()
     if category != "merch":
@@ -1258,6 +1328,7 @@ def _sync_merch_variant_family_to_makerworks(
             session,
             sibling,
             include_catalog_fields=include_catalog_fields,
+            allow_create=False,
         )
 
 
@@ -1369,9 +1440,6 @@ def _sync_makerworks_merch_to_hardware(session: Session) -> dict[str, Any]:
         select_parts.append('NULL AS "unit_of_measure"')
 
     where_fragments = []
-    if stockworks_link_column:
-        quoted_link = _quote_identifier(stockworks_link_column)
-        where_fragments.append(f"({quoted_link} IS NULL OR {quoted_link}::text = '')")
     if active_column:
         quoted_active = _quote_identifier(active_column)
         where_fragments.append(f"COALESCE({quoted_active}, TRUE) = TRUE")
