@@ -159,6 +159,10 @@ class PricingResponse(SQLModel):
 class HardwareItemBase(SQLModel):
     name: str = Field(index=True)
     category: Optional[str] = Field(default=None, index=True, description="E.g. magnets, inserts, screws")
+    merch_color: Optional[str] = Field(default=None, description="Merch color variant")
+    merch_size: Optional[str] = Field(default=None, description="Merch size variant")
+    merch_style: Optional[str] = Field(default=None, description="Merch style or fit")
+    merch_sku: Optional[str] = Field(default=None, description="Merch SKU/variant code")
     supplier: Optional[str] = None
     manufacturer_part_number: Optional[str] = Field(default=None, description="Vendor or manufacturer reference")
     unit_of_measure: str = Field(default="piece", description="e.g. piece, set, pack")
@@ -182,6 +186,10 @@ class HardwareItemCreate(HardwareItemBase):
 class HardwareItemUpdate(SQLModel):
     name: Optional[str] = None
     category: Optional[str] = None
+    merch_color: Optional[str] = None
+    merch_size: Optional[str] = None
+    merch_style: Optional[str] = None
+    merch_sku: Optional[str] = None
     supplier: Optional[str] = None
     manufacturer_part_number: Optional[str] = None
     unit_of_measure: Optional[str] = None

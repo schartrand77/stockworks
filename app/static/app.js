@@ -7,6 +7,7 @@ const state = {
   currentInventoryId: null,
   currentMovementItemId: null,
   currentHardwareId: null,
+  currentMerchId: null,
   currentHardwareMovementId: null,
   currentModelId: null,
   currentModelSaleId: null,
@@ -105,6 +106,10 @@ const hardwareIdInput = document.getElementById("hardware-id");
 const hardwareFields = {
   name: document.getElementById("hardware-name"),
   category: document.getElementById("hardware-category"),
+  merch_color: document.getElementById("hardware-merch-color"),
+  merch_size: document.getElementById("hardware-merch-size"),
+  merch_style: document.getElementById("hardware-merch-style"),
+  merch_sku: document.getElementById("hardware-merch-sku"),
   supplier: document.getElementById("hardware-supplier"),
   manufacturer_part_number: document.getElementById("hardware-mpn"),
   unit_of_measure: document.getElementById("hardware-unit"),
@@ -121,7 +126,25 @@ const hardwareRefreshBtn = document.getElementById("hardware-refresh");
 const hardwareSyncMerchBtn = document.getElementById("hardware-sync-merch");
 const hardwareDeleteBtn = document.getElementById("hardware-delete");
 const merchTableBody = document.querySelector("#merch-table tbody");
+const merchForm = document.getElementById("merch-form");
+const merchIdInput = document.getElementById("merch-id");
+const merchFields = {
+  name: document.getElementById("merch-name"),
+  category: document.getElementById("merch-category"),
+  merch_color: document.getElementById("merch-color"),
+  merch_size: document.getElementById("merch-size"),
+  merch_style: document.getElementById("merch-style"),
+  merch_sku: document.getElementById("merch-sku"),
+  unit_of_measure: document.getElementById("merch-unit"),
+  quantity_on_hand: document.getElementById("merch-quantity"),
+  reorder_level: document.getElementById("merch-reorder"),
+  bin_location: document.getElementById("merch-bin"),
+  notes: document.getElementById("merch-notes"),
+};
+const merchClearBtn = document.getElementById("merch-clear");
+const merchDeleteBtn = document.getElementById("merch-delete");
 const merchSearchInput = document.getElementById("merch-search");
+const merchNewBtn = document.getElementById("merch-new");
 const merchRefreshBtn = document.getElementById("merch-refresh");
 const merchSyncBtn = document.getElementById("merch-sync");
 
@@ -274,6 +297,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initThemeToggle();
   initTabs();
   bindEvents();
+  resetMerchForm();
   updateMaterialColorRequirement();
   syncMaterialColorInputs({ source: "text" });
   safeAsync(loadFilamentTypes);
@@ -394,6 +418,9 @@ function bindEvents() {
   if (merchRefreshBtn) {
     merchRefreshBtn.addEventListener("click", () => safeAsync(loadHardware));
   }
+  if (merchNewBtn) {
+    merchNewBtn.addEventListener("click", startNewMerchEntry);
+  }
   if (merchSyncBtn) {
     merchSyncBtn.addEventListener("click", () => safeAsync(syncMakerWorksMerch));
   }
@@ -446,8 +473,23 @@ function bindEvents() {
   materialForm.addEventListener("submit", handleMaterialSubmit);
   inventoryForm.addEventListener("submit", handleInventorySubmit);
   hardwareForm.addEventListener("submit", handleHardwareSubmit);
+  if (merchForm) {
+    merchForm.addEventListener("submit", handleMerchSubmit);
+  }
   if (modelForm) {
     modelForm.addEventListener("submit", handleModelSubmit);
+  }
+  if (merchClearBtn) {
+    merchClearBtn.addEventListener("click", resetMerchForm);
+  }
+  if (merchDeleteBtn) {
+    merchDeleteBtn.addEventListener("click", () => {
+      if (state.currentMerchId) {
+        safeAsync(() => deleteMerch(state.currentMerchId));
+      } else {
+        setMessage("Select a merch row first.", "error");
+      }
+    });
   }
   if (materialFields.color_hex) {
     materialFields.color_hex.addEventListener("input", () => syncMaterialColorInputs({ source: "text" }));
@@ -857,6 +899,9 @@ async function loadHardware({ suppressReports = false } = {}) {
   if (state.currentHardwareId && !hardware.some((item) => item.id === state.currentHardwareId)) {
     resetHardwareForm();
   }
+  if (state.currentMerchId && !hardware.some((item) => item.id === state.currentMerchId)) {
+    resetMerchForm();
+  }
   if (state.currentHardwareMovementId) {
     const stillExists = hardware.some((item) => item.id === state.currentHardwareMovementId);
     if (stillExists) {
@@ -1172,6 +1217,10 @@ function filterMerch(items) {
     matchesSearch(search, [
       item.name,
       item.category,
+      item.merch_color,
+      item.merch_size,
+      item.merch_style,
+      item.merch_sku,
       item.bin_location,
       item.notes,
       item.supplier,
@@ -1911,11 +1960,11 @@ function renderMerch() {
   }
   const filtered = filterMerch(state.hardware);
   if (!state.hardware.some((item) => isMerchItem(item))) {
-    merchTableBody.innerHTML = `<tr><td colspan="7" class="muted">No merch inventory recorded yet. Run MakerWorks merch sync first.</td></tr>`;
+    merchTableBody.innerHTML = `<tr><td colspan="10" class="muted">No merch inventory recorded yet. Run MakerWorks merch sync first.</td></tr>`;
     return;
   }
   if (!filtered.length) {
-    merchTableBody.innerHTML = `<tr><td colspan="7" class="muted">No merch matches your search.</td></tr>`;
+    merchTableBody.innerHTML = `<tr><td colspan="10" class="muted">No merch matches your search.</td></tr>`;
     return;
   }
   merchTableBody.innerHTML = filtered
@@ -1923,12 +1972,19 @@ function renderMerch() {
       (item) => `
         <tr data-id="${item.id}">
           <td>${escapeHtml(item.name)}</td>
+          <td>${escapeHtml(item.category || "")}</td>
+          <td>${escapeHtml(item.merch_color || "")}</td>
+          <td>${escapeHtml(item.merch_size || "")}</td>
           <td>${Number(item.quantity_on_hand || 0).toFixed(2)}</td>
           <td>${Number(item.reorder_level || 0).toFixed(2)}</td>
           <td>${escapeHtml(item.unit_of_measure || "piece")}</td>
           <td>${escapeHtml(item.bin_location || "")}</td>
           <td>${escapeHtml(item.notes || "")}</td>
-          <td><button class="small-button" data-action="edit" data-id="${item.id}">Edit</button></td>
+          <td>
+            <button class="small-button" data-action="edit" data-id="${item.id}">Edit</button>
+            <button class="small-button" data-action="move" data-id="${item.id}">Move</button>
+            <button class="small-button danger" data-action="delete" data-id="${item.id}">Delete</button>
+          </td>
         </tr>`
     )
     .join("");
@@ -2352,6 +2408,28 @@ function startMaterialEdit(id) {
   loadMaterialCostHistory(id);
 }
 
+async function handleMerchSubmit(event) {
+  event.preventDefault();
+  try {
+    const payload = buildMerchPayload();
+    if (!payload) return;
+    if (state.currentMerchId) {
+      await api(`/hardware/${state.currentMerchId}`, { method: "PUT", body: payload });
+    } else {
+      const created = await api("/hardware", { method: "POST", body: payload });
+      if (created && Number.isFinite(Number(created.id))) {
+        state.currentMerchId = Number(created.id);
+        merchIdInput.value = String(created.id);
+      }
+    }
+    await loadHardware();
+    showToast("Merch saved.", "success");
+  } catch (error) {
+    console.error(error);
+    setMessage(error.message, "error");
+  }
+}
+
 function startInventoryEdit(id) {
   const item = state.inventory.find((i) => i.id === id);
   if (!item) return;
@@ -2391,6 +2469,10 @@ function startHardwareEdit(id) {
   hardwareIdInput.value = id;
   hardwareFields.name.value = item.name;
   hardwareFields.category.value = item.category || "";
+  hardwareFields.merch_color.value = item.merch_color || "";
+  hardwareFields.merch_size.value = item.merch_size || "";
+  hardwareFields.merch_style.value = item.merch_style || "";
+  hardwareFields.merch_sku.value = item.merch_sku || "";
   hardwareFields.supplier.value = item.supplier || "";
   hardwareFields.manufacturer_part_number.value = item.manufacturer_part_number || "";
   hardwareFields.unit_of_measure.value = item.unit_of_measure;
@@ -2527,6 +2609,26 @@ function buildMaterialPayload() {
   };
 }
 
+async function deleteMerch(id) {
+  if (!confirm("Delete this merch item and its movements?")) {
+    return;
+  }
+  try {
+    await api(`/hardware/${id}`, { method: "DELETE" });
+    if (state.currentMerchId === id) {
+      resetMerchForm();
+    }
+    if (state.currentHardwareId === id) {
+      resetHardwareForm();
+    }
+    await loadHardware();
+    setMessage("Merch deleted.", "success");
+  } catch (error) {
+    console.error(error);
+    setMessage(error.message, "error");
+  }
+}
+
 function optionalString(value) {
   const trimmed = (value || "").trim();
   return trimmed ? trimmed : null;
@@ -2593,6 +2695,10 @@ function buildHardwarePayload() {
   return {
     name,
     category: optionalString(hardwareFields.category.value),
+    merch_color: optionalString(hardwareFields.merch_color.value),
+    merch_size: optionalString(hardwareFields.merch_size.value),
+    merch_style: optionalString(hardwareFields.merch_style.value),
+    merch_sku: optionalString(hardwareFields.merch_sku.value),
     supplier: optionalString(hardwareFields.supplier.value),
     manufacturer_part_number: optionalString(hardwareFields.manufacturer_part_number.value),
     unit_of_measure: hardwareFields.unit_of_measure.value.trim() || "piece",
@@ -2639,6 +2745,33 @@ function resetMaterialForm() {
   loadMaterialCostHistory(null);
 }
 
+function buildMerchPayload() {
+  const name = merchFields.name.value.trim();
+  if (!name) {
+    setMessage("Name is required for merch.", "error");
+    return null;
+  }
+  const quantity = Number(merchFields.quantity_on_hand.value || 0);
+  const reorder = Number(merchFields.reorder_level.value || 0);
+  if (!Number.isFinite(quantity) || quantity < 0 || !Number.isFinite(reorder) || reorder < 0) {
+    setMessage("Quantities must be non-negative numbers.", "error");
+    return null;
+  }
+  return {
+    name,
+    category: optionalString(merchFields.category.value) || "merch",
+    merch_color: optionalString(merchFields.merch_color.value),
+    merch_size: optionalString(merchFields.merch_size.value),
+    merch_style: optionalString(merchFields.merch_style.value),
+    merch_sku: optionalString(merchFields.merch_sku.value),
+    unit_of_measure: merchFields.unit_of_measure.value.trim() || "piece",
+    quantity_on_hand: quantity,
+    reorder_level: reorder,
+    bin_location: optionalString(merchFields.bin_location.value),
+    notes: optionalString(merchFields.notes.value),
+  };
+}
+
 function resetInventoryForm() {
   inventoryForm.reset();
   inventoryIdInput.value = "";
@@ -2664,6 +2797,17 @@ async function loadModelSales(modelId, { suppressReports = false } = {}) {
   if (!suppressReports) {
     renderReports();
   }
+}
+
+function resetMerchForm() {
+  if (!merchForm) return;
+  merchForm.reset();
+  merchIdInput.value = "";
+  state.currentMerchId = null;
+  if (merchFields.category) merchFields.category.value = "merch";
+  if (merchFields.unit_of_measure) merchFields.unit_of_measure.value = "piece";
+  if (merchFields.quantity_on_hand) merchFields.quantity_on_hand.value = "0";
+  if (merchFields.reorder_level) merchFields.reorder_level.value = "0";
 }
 
 function renderModelSales(sales) {
@@ -2877,8 +3021,56 @@ function handleMerchRowClick(event) {
   if (!button) return;
   const id = Number(button.dataset.id);
   if (button.dataset.action === "edit") {
+    startMerchEdit(id);
+    return;
+  }
+  if (button.dataset.action === "move") {
     setActiveTab("hardware-panel");
-    startHardwareEdit(id);
+    startHardwareMovementEntry(id);
+    return;
+  }
+  if (button.dataset.action === "delete") {
+    safeAsync(() => deleteMerch(id));
+  }
+}
+
+function startNewMerchEntry() {
+  resetMerchForm();
+  if (merchFields.name) {
+    merchFields.name.focus();
+  }
+}
+
+function startMerchEdit(id) {
+  const item = state.hardware.find((hardware) => hardware.id === id);
+  if (!item) return;
+  state.currentMerchId = id;
+  merchIdInput.value = String(id);
+  merchFields.name.value = item.name || "";
+  merchFields.category.value = item.category || "merch";
+  merchFields.merch_color.value = item.merch_color || "";
+  merchFields.merch_size.value = item.merch_size || "";
+  merchFields.merch_style.value = item.merch_style || "";
+  merchFields.merch_sku.value = item.merch_sku || "";
+  merchFields.unit_of_measure.value = item.unit_of_measure || "piece";
+  merchFields.quantity_on_hand.value = String(item.quantity_on_hand ?? 0);
+  merchFields.reorder_level.value = String(item.reorder_level ?? 0);
+  merchFields.bin_location.value = item.bin_location || "";
+  merchFields.notes.value = item.notes || "";
+  if (merchFields.name) {
+    merchFields.name.focus();
+  }
+}
+
+function startHardwareMovementEntry(id) {
+  const item = state.hardware.find((hardware) => hardware.id === id);
+  if (!item) return;
+  hardwareMovementSelect.value = String(id);
+  state.currentHardwareMovementId = id;
+  safeAsync(() => loadHardwareMovements(id));
+  if (hardwareMovementChange) {
+    hardwareMovementChange.focus();
+    hardwareMovementChange.select();
   }
 }
 

@@ -13,7 +13,7 @@ If you can use a web page, you can use StockWorks.
 ## What StockWorks can do
 - **Track filament spools**: color, material, remaining weight.
 - **Track hardware**: screws, inserts, magnets, and other parts.
-- **Sync merch from MakerWorks**: import MakerWorks merch templates into Hardware inventory.
+- **Sync merch from MakerWorks**: import merch templates, then keep quantity/catalog updates synced with MakerWorks.
 - **Show stock changes**: every add and remove is recorded.
 - **Create quotes**: build a material list and price estimate.
 - **Show incoming jobs**: live orders from MakerWorks and OrderWorks.
@@ -89,8 +89,11 @@ What this does:
 - Pulls merch templates from MakerWorks `ProductTemplate`.
 - Creates or updates matching Hardware records in StockWorks.
 - Sets category to `merch` and maps quantity/reorder fields when those columns exist in MakerWorks.
+- Writes merch quantity changes (and merch item edits) back to MakerWorks `ProductTemplate` for linked merch items.
+- For merch variants (same item/style/color with different sizes), StockWorks writes all sibling variant quantities so MakerWorks size availability stays accurate (e.g., only `L` in stock means other sizes are sold out).
 
-You can review merch separately in the **Merch** tab, which includes a dedicated inventory search bar.
+You can manage merch directly in the **Merch** tab (add, edit, delete) and use the dedicated inventory search bar.
+Merch records support variant details such as category, color, size, style, and SKU.
 
 ## Simple tips
 - Use Dashboard first if you only have a minute.

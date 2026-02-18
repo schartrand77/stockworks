@@ -534,6 +534,10 @@ def list_hardware_items(
             or_(
                 HardwareItem.name.ilike(pattern),
                 HardwareItem.category.ilike(pattern),
+                HardwareItem.merch_color.ilike(pattern),
+                HardwareItem.merch_size.ilike(pattern),
+                HardwareItem.merch_style.ilike(pattern),
+                HardwareItem.merch_sku.ilike(pattern),
                 HardwareItem.supplier.ilike(pattern),
                 HardwareItem.manufacturer_part_number.ilike(pattern),
                 HardwareItem.bin_location.ilike(pattern),
@@ -572,6 +576,8 @@ def update_hardware_item(
     for key, value in update_data.items():
         setattr(item, key, value)
     session.add(item)
+    session.flush()
+    _sync_merch_variant_family_to_makerworks(session, item, include_catalog_fields=True)
     session.commit()
     session.refresh(item)
     return item
@@ -582,6 +588,9 @@ def delete_hardware_item(hardware_id: int, session: Session = Depends(get_sessio
     item = session.get(HardwareItem, hardware_id)
     if not item:
         raise HTTPException(status_code=404, detail="Hardware item not found")
+    if item.makerworks_product_template_id:
+        item.quantity_on_hand = 0
+        _sync_hardware_item_to_makerworks_product_template(session, item, include_catalog_fields=False)
     session.delete(item)
     session.commit()
     return None
@@ -603,6 +612,8 @@ def create_hardware_movement(
     item.quantity_on_hand = new_qty
     session.add(item)
     session.add(movement)
+    session.flush()
+    _sync_merch_variant_family_to_makerworks(session, item, include_catalog_fields=False)
     session.commit()
     session.refresh(movement)
     return movement
@@ -1070,6 +1081,186 @@ def _sync_model_to_makerworks_product_template(session: Session, model: PrintMod
         ) from exc
 
 
+def _sync_hardware_item_to_makerworks_product_template(
+    session: Session,
+    item: HardwareItem,
+    *,
+    include_catalog_fields: bool = True,
+) -> None:
+    template_id = (item.makerworks_product_template_id or "").strip()
+    if not template_id:
+        return
+    bind = session.get_bind()
+    if bind is None or bind.dialect.name != "postgresql":
+        return
+
+    conn = session.connection()
+    table_exists = conn.execute(
+        text(
+            """
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_name = 'ProductTemplate'
+            """
+        )
+    ).first()
+    if not table_exists:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail='MakerWorks table public."ProductTemplate" was not found for merch sync writeback.',
+        )
+
+    available_columns = _fetch_table_columns(conn, "public", "ProductTemplate")
+    id_column = _find_matching_column(available_columns, ["id"])
+    if not id_column:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail='MakerWorks ProductTemplate is missing required "id" column for merch sync writeback.',
+        )
+
+    title_column = _find_matching_column(available_columns, ["title", "name"])
+    description_column = _find_matching_column(available_columns, ["description", "details"])
+    quantity_column = _find_matching_column(
+        available_columns,
+        [
+            "quantityOnHand",
+            "stockOnHand",
+            "inventoryQuantity",
+            "inventoryCount",
+            "availableQuantity",
+            "onHand",
+            "stock",
+        ],
+    )
+    category_column = _find_matching_column(available_columns, ["category", "productCategory", "type"])
+    color_column = _find_matching_column(available_columns, ["color", "colour"])
+    size_column = _find_matching_column(available_columns, ["size", "variantSize"])
+    style_column = _find_matching_column(available_columns, ["style", "variantStyle"])
+    sku_column = _find_matching_column(available_columns, ["sku", "variantSku", "code"])
+    in_stock_column = _find_matching_column(
+        available_columns,
+        ["isInStock", "inStock", "available", "isAvailable", "in_stock"],
+    )
+    sold_out_column = _find_matching_column(available_columns, ["isSoldOut", "soldOut", "outOfStock", "sold_out"])
+    stock_status_column = _find_matching_column(
+        available_columns,
+        ["stockStatus", "availability", "inventoryStatus", "stock_status"],
+    )
+    reorder_column = _find_matching_column(available_columns, ["reorderLevel", "reorderPoint", "restockThreshold"])
+    unit_column = _find_matching_column(available_columns, ["unitOfMeasure", "uom", "unit"])
+    updated_at_column = _find_matching_column(available_columns, ["updatedAt", "updated_at"])
+
+    set_parts: list[str] = []
+    params: dict[str, Any] = {"makerworks_id": template_id}
+
+    if quantity_column:
+        set_parts.append(f'{_quote_identifier(quantity_column)} = :quantity_on_hand')
+        params["quantity_on_hand"] = float(item.quantity_on_hand or 0)
+    has_stock = float(item.quantity_on_hand or 0) > 0
+    if in_stock_column:
+        set_parts.append(f'{_quote_identifier(in_stock_column)} = :is_in_stock')
+        params["is_in_stock"] = has_stock
+    if sold_out_column:
+        set_parts.append(f'{_quote_identifier(sold_out_column)} = :is_sold_out')
+        params["is_sold_out"] = not has_stock
+    if stock_status_column:
+        set_parts.append(f'{_quote_identifier(stock_status_column)} = :stock_status')
+        params["stock_status"] = "in_stock" if has_stock else "sold_out"
+    if reorder_column and include_catalog_fields:
+        set_parts.append(f'{_quote_identifier(reorder_column)} = :reorder_level')
+        params["reorder_level"] = float(item.reorder_level or 0)
+    if unit_column and include_catalog_fields:
+        set_parts.append(f'{_quote_identifier(unit_column)} = :unit_of_measure')
+        params["unit_of_measure"] = (item.unit_of_measure or "piece").strip() or "piece"
+    if title_column and include_catalog_fields:
+        set_parts.append(f'{_quote_identifier(title_column)} = :title')
+        params["title"] = item.name
+    if description_column and include_catalog_fields:
+        set_parts.append(f'{_quote_identifier(description_column)} = :description')
+        params["description"] = (item.notes or "").strip() or None
+    if category_column and include_catalog_fields:
+        set_parts.append(f'{_quote_identifier(category_column)} = :category')
+        params["category"] = (item.category or "").strip() or None
+    if color_column and include_catalog_fields:
+        set_parts.append(f'{_quote_identifier(color_column)} = :merch_color')
+        params["merch_color"] = (item.merch_color or "").strip() or None
+    if size_column and include_catalog_fields:
+        set_parts.append(f'{_quote_identifier(size_column)} = :merch_size')
+        params["merch_size"] = (item.merch_size or "").strip() or None
+    if style_column and include_catalog_fields:
+        set_parts.append(f'{_quote_identifier(style_column)} = :merch_style')
+        params["merch_style"] = (item.merch_style or "").strip() or None
+    if sku_column and include_catalog_fields:
+        set_parts.append(f'{_quote_identifier(sku_column)} = :merch_sku')
+        params["merch_sku"] = (item.merch_sku or "").strip() or None
+    if updated_at_column:
+        set_parts.append(f'{_quote_identifier(updated_at_column)} = :updated_at')
+        params["updated_at"] = datetime.utcnow()
+
+    if not set_parts:
+        return
+
+    query = text(
+        f'UPDATE public."ProductTemplate" '
+        f'SET {", ".join(set_parts)} '
+        f'WHERE {_quote_identifier(id_column)} = :makerworks_id'
+    )
+    try:
+        result = conn.execute(query, params)
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Failed to sync merch item to MakerWorks ProductTemplate: {exc}",
+        ) from exc
+
+    if (result.rowcount or 0) < 1:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f'MakerWorks ProductTemplate "{template_id}" was not found for merch sync writeback.',
+        )
+
+
+def _sync_merch_variant_family_to_makerworks(
+    session: Session,
+    item: HardwareItem,
+    *,
+    include_catalog_fields: bool,
+) -> None:
+    template_id = (item.makerworks_product_template_id or "").strip()
+    if not template_id:
+        return
+
+    category = (item.category or "").strip().lower()
+    if category != "merch":
+        _sync_hardware_item_to_makerworks_product_template(session, item, include_catalog_fields=include_catalog_fields)
+        return
+
+    name_key = (item.name or "").strip().lower()
+    color_key = (item.merch_color or "").strip().lower()
+    style_key = (item.merch_style or "").strip().lower()
+    if not name_key:
+        _sync_hardware_item_to_makerworks_product_template(session, item, include_catalog_fields=include_catalog_fields)
+        return
+
+    siblings = session.exec(
+        select(HardwareItem).where(
+            HardwareItem.makerworks_product_template_id.is_not(None),
+            func.lower(HardwareItem.name) == name_key,
+            func.lower(func.coalesce(HardwareItem.merch_color, "")) == color_key,
+            func.lower(func.coalesce(HardwareItem.merch_style, "")) == style_key,
+        )
+    ).all()
+    if not siblings:
+        siblings = [item]
+
+    for sibling in siblings:
+        _sync_hardware_item_to_makerworks_product_template(
+            session,
+            sibling,
+            include_catalog_fields=include_catalog_fields,
+        )
+
+
 def _sync_makerworks_merch_to_hardware(session: Session) -> dict[str, Any]:
     bind = session.get_bind()
     if bind is None or bind.dialect.name != "postgresql":
@@ -1114,6 +1305,11 @@ def _sync_makerworks_merch_to_hardware(session: Session) -> dict[str, Any]:
             "stock",
         ],
     )
+    category_column = _find_matching_column(available_columns, ["category", "productCategory", "type"])
+    color_column = _find_matching_column(available_columns, ["color", "colour"])
+    size_column = _find_matching_column(available_columns, ["size", "variantSize"])
+    style_column = _find_matching_column(available_columns, ["style", "variantStyle"])
+    sku_column = _find_matching_column(available_columns, ["sku", "variantSku", "code"])
     reorder_column = _find_matching_column(available_columns, ["reorderLevel", "reorderPoint", "restockThreshold"])
     unit_column = _find_matching_column(available_columns, ["unitOfMeasure", "uom", "unit"])
 
@@ -1143,6 +1339,26 @@ def _sync_makerworks_merch_to_hardware(session: Session) -> dict[str, Any]:
         select_parts.append(f'{_quote_identifier(quantity_column)} AS "quantity_on_hand"')
     else:
         select_parts.append('NULL AS "quantity_on_hand"')
+    if category_column:
+        select_parts.append(f'{_quote_identifier(category_column)} AS "category"')
+    else:
+        select_parts.append('NULL AS "category"')
+    if color_column:
+        select_parts.append(f'{_quote_identifier(color_column)} AS "merch_color"')
+    else:
+        select_parts.append('NULL AS "merch_color"')
+    if size_column:
+        select_parts.append(f'{_quote_identifier(size_column)} AS "merch_size"')
+    else:
+        select_parts.append('NULL AS "merch_size"')
+    if style_column:
+        select_parts.append(f'{_quote_identifier(style_column)} AS "merch_style"')
+    else:
+        select_parts.append('NULL AS "merch_style"')
+    if sku_column:
+        select_parts.append(f'{_quote_identifier(sku_column)} AS "merch_sku"')
+    else:
+        select_parts.append('NULL AS "merch_sku"')
     if reorder_column:
         select_parts.append(f'{_quote_identifier(reorder_column)} AS "reorder_level"')
     else:
@@ -1203,13 +1419,22 @@ def _sync_makerworks_merch_to_hardware(session: Session) -> dict[str, Any]:
         reorder_level = _coerce_non_negative_number(row.get("reorder_level"))
         unit_of_measure = str(row.get("unit_of_measure") or "").strip() or "piece"
         description = str(row.get("description") or "").strip() or None
-        category = "merch"
+        source_category = str(row.get("category") or "").strip()
+        category = source_category or "merch"
+        merch_color = str(row.get("merch_color") or "").strip() or None
+        merch_size = str(row.get("merch_size") or "").strip() or None
+        merch_style = str(row.get("merch_style") or "").strip() or None
+        merch_sku = str(row.get("merch_sku") or "").strip() or None
 
         if item:
             item.name = title
             item.category = category
             item.makerworks_product_template_id = makerworks_id
             item.unit_of_measure = unit_of_measure
+            item.merch_color = merch_color
+            item.merch_size = merch_size
+            item.merch_style = merch_style
+            item.merch_sku = merch_sku
             if quantity_on_hand is not None:
                 item.quantity_on_hand = quantity_on_hand
             if reorder_level is not None:
@@ -1224,6 +1449,10 @@ def _sync_makerworks_merch_to_hardware(session: Session) -> dict[str, Any]:
             name=title,
             category=category,
             unit_of_measure=unit_of_measure,
+            merch_color=merch_color,
+            merch_size=merch_size,
+            merch_style=merch_style,
+            merch_sku=merch_sku,
             quantity_on_hand=quantity_on_hand if quantity_on_hand is not None else 0,
             reorder_level=reorder_level if reorder_level is not None else 0,
             notes=description,

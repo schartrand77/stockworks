@@ -534,6 +534,22 @@
                 <input type="text" id="hardware-category" placeholder="Magnets, Inserts, Screws..." />
               </label>
               <label>
+                Merch color
+                <input type="text" id="hardware-merch-color" placeholder="Black, Red, Heather Gray..." />
+              </label>
+              <label>
+                Merch size
+                <input type="text" id="hardware-merch-size" placeholder="S, M, L, XL..." />
+              </label>
+              <label>
+                Merch style
+                <input type="text" id="hardware-merch-style" placeholder="Unisex tee, Hoodie, Cap..." />
+              </label>
+              <label>
+                Merch SKU
+                <input type="text" id="hardware-merch-sku" placeholder="TS-BLK-M-001" />
+              </label>
+              <label>
                 Supplier
                 <input type="text" id="hardware-supplier" placeholder="Optional" />
               </label>
@@ -665,11 +681,66 @@
             <p>Search MakerWorks merch inventory synced into StockWorks.</p>
           </div>
           <div class="card-actions">
+            <button id="merch-new" type="button">New merch</button>
             <button id="merch-refresh" type="button">Refresh merch</button>
             <button id="merch-sync" type="button">Sync MakerWorks merch</button>
           </div>
         </div>
         <div class="card-body" id="merch-body">
+          <div class="two-columns">
+            <form id="merch-form" class="stack">
+              <input type="hidden" id="merch-id" />
+              <label>
+                Name
+                <input type="text" id="merch-name" required placeholder="Shop T-Shirt" />
+              </label>
+              <label>
+                Category
+                <input type="text" id="merch-category" placeholder="merch" />
+              </label>
+              <label>
+                Color
+                <input type="text" id="merch-color" placeholder="Black" />
+              </label>
+              <label>
+                Size
+                <input type="text" id="merch-size" placeholder="M" />
+              </label>
+              <label>
+                Style
+                <input type="text" id="merch-style" placeholder="Unisex tee" />
+              </label>
+              <label>
+                SKU
+                <input type="text" id="merch-sku" placeholder="TS-BLK-M-001" />
+              </label>
+              <label>
+                Unit
+                <input type="text" id="merch-unit" placeholder="piece" />
+              </label>
+              <label>
+                Quantity on hand
+                <input type="number" step="0.01" min="0" id="merch-quantity" required />
+              </label>
+              <label>
+                Reorder level
+                <input type="number" step="0.01" min="0" id="merch-reorder" />
+              </label>
+              <label>
+                Bin / location
+                <input type="text" id="merch-bin" placeholder="Front shelf" />
+              </label>
+              <label class="full-width">
+                Notes
+                <textarea id="merch-notes" rows="2" placeholder="Optional"></textarea>
+              </label>
+              <div class="form-actions">
+                <button type="submit">Save merch</button>
+                <button type="button" id="merch-clear">Clear</button>
+                <button type="button" id="merch-delete" class="danger">Delete</button>
+              </div>
+            </form>
+          </div>
           <div class="table-controls" id="merch-controls">
             <label class="table-control">
               Search
@@ -681,17 +752,20 @@
               <thead>
                 <tr>
                   <th>Name</th>
+                  <th>Category</th>
+                  <th>Color</th>
+                  <th>Size</th>
                   <th>Qty</th>
                   <th>Reorder</th>
                   <th>Unit</th>
                   <th>Location</th>
                   <th>Notes</th>
-                  <th></th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
-                  <td colspan="7" class="muted">No merch inventory loaded yet.</td>
+                  <td colspan="10" class="muted">No merch inventory loaded yet.</td>
                 </tr>
               </tbody>
             </table>

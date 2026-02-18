@@ -169,6 +169,10 @@ def _ensure_schema_exists() -> None:
 def _ensure_hardware_columns() -> None:
     desired_columns = {
         "makerworks_product_template_id": "TEXT",
+        "merch_color": "TEXT",
+        "merch_size": "TEXT",
+        "merch_style": "TEXT",
+        "merch_sku": "TEXT",
     }
     backend = engine.url.get_backend_name()
     with engine.begin() as conn:
