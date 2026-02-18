@@ -57,6 +57,19 @@ def _strip_schema_parameter(database_url: str) -> Tuple[str, Optional[str]]:
     return urlunparse(parsed._replace(query=new_query)), schema
 
 
+def _configure_sqlite_connection(db_engine, database_url: str) -> None:
+    if not database_url.startswith("sqlite"):
+        return
+
+    @event.listens_for(db_engine, "connect")
+    def _set_sqlite_runtime_pragmas(dbapi_connection, _connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA temp_store=MEMORY")
+        cursor.close()
+
+
 def create_db_engine():
     global DB_SCHEMA
     database_url = _build_database_url()
@@ -172,19 +185,6 @@ def _ensure_hardware_columns() -> None:
             table_name = f"{quoted_schema}.hardwareitem"
             for column, ddl in desired_columns.items():
                 conn.exec_driver_sql(f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS {column} {ddl}")
-
-
-def _configure_sqlite_connection(db_engine, database_url: str) -> None:
-    if not database_url.startswith("sqlite"):
-        return
-
-    @event.listens_for(db_engine, "connect")
-    def _set_sqlite_runtime_pragmas(dbapi_connection, _connection_record):
-        cursor = dbapi_connection.cursor()
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.execute("PRAGMA synchronous=NORMAL")
-        cursor.execute("PRAGMA temp_store=MEMORY")
-        cursor.close()
 
 
 def _ensure_sqlite_pragmas() -> None:
