@@ -595,9 +595,13 @@ def delete_hardware_item(hardware_id: int, session: Session = Depends(get_sessio
     item = session.get(HardwareItem, hardware_id)
     if not item:
         raise HTTPException(status_code=404, detail="Hardware item not found")
-    if item.makerworks_product_template_id and (item.category or "").strip().lower() != "merch":
-        item.quantity_on_hand = 0
-        _sync_hardware_item_to_makerworks_product_template(session, item, include_catalog_fields=False)
+    template_id = (item.makerworks_product_template_id or "").strip()
+    if template_id:
+        if (item.category or "").strip().lower() == "merch":
+            _delete_makerworks_product_template(session, template_id)
+        else:
+            item.quantity_on_hand = 0
+            _sync_hardware_item_to_makerworks_product_template(session, item, include_catalog_fields=False)
     session.delete(item)
     session.commit()
     return None
@@ -1540,6 +1544,56 @@ def _sync_makerworks_merch_to_hardware(session: Session) -> dict[str, Any]:
         "reorder_source_column": reorder_column,
         "unit_source_column": unit_column,
     }
+
+
+def _delete_makerworks_product_template(session: Session, template_id: str) -> None:
+    bind = session.get_bind()
+    if bind is None or bind.dialect.name != "postgresql":
+        return
+
+    conn = session.connection()
+    table_exists = conn.execute(
+        text(
+            """
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_name = 'ProductTemplate'
+            """
+        )
+    ).first()
+    if not table_exists:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail='MakerWorks table public."ProductTemplate" was not found for merch delete writeback.',
+        )
+
+    available_columns = _fetch_table_columns(conn, "public", "ProductTemplate")
+    id_column = _find_matching_column(available_columns, ["id"])
+    if not id_column:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail='MakerWorks ProductTemplate is missing required "id" column for merch delete writeback.',
+        )
+
+    try:
+        result = conn.execute(
+            text(
+                f'DELETE FROM public."ProductTemplate" '
+                f'WHERE {_quote_identifier(id_column)} = :makerworks_id'
+            ),
+            {"makerworks_id": template_id},
+        )
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Failed to delete merch item from MakerWorks ProductTemplate: {exc}",
+        ) from exc
+
+    if (result.rowcount or 0) < 1:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f'MakerWorks ProductTemplate "{template_id}" was not found for merch delete writeback.',
+        )
 
 
 def _fetch_table_columns(connection: Any, schema: str, table: str) -> set[str]:
