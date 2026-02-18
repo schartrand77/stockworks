@@ -1018,6 +1018,33 @@ def _sync_model_to_makerworks_product_template(session: Session, model: PrintMod
 
     description = (model.notes or "").strip() or (model.category or "").strip() or None
     now = datetime.utcnow()
+    available_columns = _fetch_table_columns(conn, "public", "ProductTemplate")
+    type_column = _find_matching_column(
+        available_columns,
+        [
+            "productType",
+            "product_type",
+            "templateType",
+            "template_type",
+            "itemType",
+            "item_type",
+            "listingType",
+            "listing_type",
+            "templateKind",
+            "template_kind",
+            "kind",
+        ],
+    )
+    merch_flag_column = _find_matching_column(
+        available_columns,
+        [
+            "isMerch",
+            "is_merch",
+            "merch",
+            "isMerchandise",
+            "is_merchandise",
+        ],
+    )
     existing = conn.execute(
         text(
             """
@@ -1030,6 +1057,7 @@ def _sync_model_to_makerworks_product_template(session: Session, model: PrintMod
         {"model_id": model.id},
     ).first()
 
+    target_product_id: str | None = None
     try:
         if existing:
             conn.execute(
@@ -1051,39 +1079,48 @@ def _sync_model_to_makerworks_product_template(session: Session, model: PrintMod
                     "product_id": existing[0],
                 },
             )
-            return
+            target_product_id = str(existing[0])
+        else:
+            target_product_id = f"stockworks-model-{model.id}"
 
-        conn.execute(
-            text(
-                """
-                INSERT INTO public."ProductTemplate" (
-                    "id",
-                    "title",
-                    "description",
-                    "isActive",
-                    "createdAt",
-                    "updatedAt",
-                    "stockworksInventoryItemId"
-                ) VALUES (
-                    :id,
-                    :title,
-                    :description,
-                    :is_active,
-                    :created_at,
-                    :updated_at,
-                    :stockworks_inventory_item_id
-                )
-                """
-            ),
-            {
-                "id": f"stockworks-model-{model.id}",
-                "title": model.name,
-                "description": description,
-                "is_active": bool(model.active),
-                "created_at": now,
-                "updated_at": now,
-                "stockworks_inventory_item_id": model.id,
-            },
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO public."ProductTemplate" (
+                        "id",
+                        "title",
+                        "description",
+                        "isActive",
+                        "createdAt",
+                        "updatedAt",
+                        "stockworksInventoryItemId"
+                    ) VALUES (
+                        :id,
+                        :title,
+                        :description,
+                        :is_active,
+                        :created_at,
+                        :updated_at,
+                        :stockworks_inventory_item_id
+                    )
+                    """
+                ),
+                {
+                    "id": target_product_id,
+                    "title": model.name,
+                    "description": description,
+                    "is_active": bool(model.active),
+                    "created_at": now,
+                    "updated_at": now,
+                    "stockworks_inventory_item_id": model.id,
+                },
+            )
+        _set_makerworks_product_template_classification(
+            conn,
+            template_id=target_product_id,
+            type_column=type_column,
+            merch_flag_column=merch_flag_column,
+            is_merch=False,
         )
     except SQLAlchemyError as exc:
         raise HTTPException(
@@ -1161,6 +1198,32 @@ def _sync_hardware_item_to_makerworks_product_template(
         available_columns,
         ["stockStatus", "availability", "inventoryStatus", "stock_status"],
     )
+    type_column = _find_matching_column(
+        available_columns,
+        [
+            "productType",
+            "product_type",
+            "templateType",
+            "template_type",
+            "itemType",
+            "item_type",
+            "listingType",
+            "listing_type",
+            "templateKind",
+            "template_kind",
+            "kind",
+        ],
+    )
+    merch_flag_column = _find_matching_column(
+        available_columns,
+        [
+            "isMerch",
+            "is_merch",
+            "merch",
+            "isMerchandise",
+            "is_merchandise",
+        ],
+    )
     reorder_column = _find_matching_column(available_columns, ["reorderLevel", "reorderPoint", "restockThreshold"])
     unit_column = _find_matching_column(available_columns, ["unitOfMeasure", "uom", "unit"])
     created_at_column = _find_matching_column(available_columns, ["createdAt", "created_at"])
@@ -1187,6 +1250,14 @@ def _sync_hardware_item_to_makerworks_product_template(
             insert_columns.append(active_column)
             insert_values.append(":is_active")
             insert_params["is_active"] = True
+        if type_column:
+            insert_columns.append(type_column)
+            insert_values.append(":product_type")
+            insert_params["product_type"] = "merch"
+        if merch_flag_column:
+            insert_columns.append(merch_flag_column)
+            insert_values.append(":is_merch")
+            insert_params["is_merch"] = True
         if created_at_column:
             insert_columns.append(created_at_column)
             insert_values.append(":created_at")
@@ -1228,6 +1299,12 @@ def _sync_hardware_item_to_makerworks_product_template(
     if stock_status_column:
         set_parts.append(f'{_quote_identifier(stock_status_column)} = :stock_status')
         params["stock_status"] = "in_stock" if has_stock else "sold_out"
+    if type_column:
+        set_parts.append(f'{_quote_identifier(type_column)} = :product_type')
+        params["product_type"] = "merch"
+    if merch_flag_column:
+        set_parts.append(f'{_quote_identifier(merch_flag_column)} = :is_merch')
+        params["is_merch"] = True
     if reorder_column and include_catalog_fields:
         set_parts.append(f'{_quote_identifier(reorder_column)} = :reorder_level')
         params["reorder_level"] = float(item.reorder_level or 0)
@@ -1594,6 +1671,38 @@ def _delete_makerworks_product_template(session: Session, template_id: str) -> N
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f'MakerWorks ProductTemplate "{template_id}" was not found for merch delete writeback.',
         )
+
+
+def _set_makerworks_product_template_classification(
+    connection: Any,
+    *,
+    template_id: str | None,
+    type_column: str | None,
+    merch_flag_column: str | None,
+    is_merch: bool,
+) -> None:
+    if not template_id or (not type_column and not merch_flag_column):
+        return
+
+    set_parts: list[str] = []
+    params: dict[str, Any] = {"template_id": template_id}
+    if type_column:
+        set_parts.append(f'{_quote_identifier(type_column)} = :product_type')
+        params["product_type"] = "merch" if is_merch else "model"
+    if merch_flag_column:
+        set_parts.append(f'{_quote_identifier(merch_flag_column)} = :is_merch')
+        params["is_merch"] = bool(is_merch)
+    if not set_parts:
+        return
+
+    connection.execute(
+        text(
+            f'UPDATE public."ProductTemplate" '
+            f'SET {", ".join(set_parts)} '
+            f'WHERE "id" = :template_id'
+        ),
+        params,
+    )
 
 
 def _fetch_table_columns(connection: Any, schema: str, table: str) -> set[str]:
