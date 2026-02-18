@@ -1183,10 +1183,6 @@ def _sync_hardware_item_to_makerworks_product_template(
             insert_columns.append(active_column)
             insert_values.append(":is_active")
             insert_params["is_active"] = True
-        if stockworks_link_column:
-            insert_columns.append(stockworks_link_column)
-            insert_values.append(":stockworks_inventory_item_id")
-            insert_params["stockworks_inventory_item_id"] = item.id
         if created_at_column:
             insert_columns.append(created_at_column)
             insert_values.append(":created_at")
@@ -1243,6 +1239,9 @@ def _sync_hardware_item_to_makerworks_product_template(
     if category_column and include_catalog_fields:
         set_parts.append(f'{_quote_identifier(category_column)} = :category')
         params["category"] = (item.category or "").strip() or None
+    if stockworks_link_column:
+        # Prevent merch templates from being interpreted as model-linked templates.
+        set_parts.append(f'{_quote_identifier(stockworks_link_column)} = NULL')
     if color_column and include_catalog_fields:
         set_parts.append(f'{_quote_identifier(color_column)} = :merch_color')
         params["merch_color"] = (item.merch_color or "").strip() or None
