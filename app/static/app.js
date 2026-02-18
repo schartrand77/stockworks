@@ -777,10 +777,10 @@ async function refreshReports() {
 
 async function loadMaterials({ suppressReports = false } = {}) {
   const materials = await fetchAllPages("/materials");
-  state.materials = materials;
+  state.materials = asArray(materials);
   renderMaterials();
   populateMaterialOptions();
-  if (state.currentMaterialId && !materials.some((m) => m.id === state.currentMaterialId)) {
+  if (state.currentMaterialId && !state.materials.some((m) => m.id === state.currentMaterialId)) {
     resetMaterialForm();
   }
   if (!suppressReports) {
@@ -974,6 +974,10 @@ function matchesSearch(needle, values) {
   return values.some((value) => String(value || "").toLowerCase().includes(needle));
 }
 
+function asArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
 function memoizedArray(cacheKey, sourceItems, signature, compute) {
   const cached = derivedViewCache[cacheKey];
   if (cached && cached.sourceItems === sourceItems && cached.signature === signature) {
@@ -985,12 +989,13 @@ function memoizedArray(cacheKey, sourceItems, signature, compute) {
 }
 
 function filterMaterials(items) {
+  const materialItems = asArray(items);
   const search = filterState.materials.search;
-  return memoizedArray("materialsFilter", items, search || "", () => {
+  return memoizedArray("materialsFilter", materialItems, search || "", () => {
     if (!search) {
-      return items;
+      return materialItems;
     }
-    return items.filter((material) =>
+    return materialItems.filter((material) =>
       matchesSearch(search, [
         material.name,
         material.brand,
@@ -1039,14 +1044,15 @@ function getMaterialSortValue(material, key) {
 }
 
 function sortMaterials(items) {
+  const materialItems = asArray(items);
   const { key, direction } = sortState.materials;
   const signature = `${key || ""}:${direction || "asc"}`;
-  return memoizedArray("materialsSort", items, signature, () => {
+  return memoizedArray("materialsSort", materialItems, signature, () => {
     if (!key) {
-      return items;
+      return materialItems;
     }
     const directionFactor = direction === "desc" ? -1 : 1;
-    const sorted = [...items];
+    const sorted = [...materialItems];
     sorted.sort((a, b) => {
       const aValue = getMaterialSortValue(a, key);
       const bValue = getMaterialSortValue(b, key);

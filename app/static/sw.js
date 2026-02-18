@@ -1,4 +1,4 @@
-const CACHE_NAME = "stockworks-shell-v7";
+const CACHE_NAME = "stockworks-shell-v8";
 const CORE_ASSETS = [
   "/login",
   "/static/styles.css",
@@ -42,6 +42,11 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   const sameOrigin = url.origin === self.location.origin;
   if (!sameOrigin || !shouldCache(request, url)) {
+    return;
+  }
+
+  if (url.pathname === "/static/app.js") {
+    event.respondWith(networkFirst(request));
     return;
   }
 
@@ -89,6 +94,23 @@ async function cacheFirst(request) {
     cache.put(request, response.clone());
   }
   return response;
+}
+
+async function networkFirst(request) {
+  const cache = await caches.open(CACHE_NAME);
+  try {
+    const response = await fetch(request);
+    if (response && response.status === 200 && response.type !== "opaque" && response.type !== "opaqueredirect") {
+      cache.put(request, response.clone());
+    }
+    return response;
+  } catch (error) {
+    const cached = await cache.match(request);
+    if (cached) {
+      return cached;
+    }
+    throw error;
+  }
 }
 
 async function precacheCoreAssets(cache) {
