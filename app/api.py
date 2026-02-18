@@ -595,7 +595,7 @@ def delete_hardware_item(hardware_id: int, session: Session = Depends(get_sessio
     item = session.get(HardwareItem, hardware_id)
     if not item:
         raise HTTPException(status_code=404, detail="Hardware item not found")
-    if item.makerworks_product_template_id:
+    if item.makerworks_product_template_id and (item.category or "").strip().lower() != "merch":
         item.quantity_on_hand = 0
         _sync_hardware_item_to_makerworks_product_template(session, item, include_catalog_fields=False)
     session.delete(item)
