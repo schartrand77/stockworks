@@ -598,7 +598,7 @@ def delete_hardware_item(hardware_id: int, session: Session = Depends(get_sessio
     template_id = (item.makerworks_product_template_id or "").strip()
     if template_id:
         if (item.category or "").strip().lower() == "merch":
-            _delete_makerworks_product_template(session, template_id)
+            _delete_makerworks_merch_item(session, template_id)
         else:
             item.quantity_on_hand = 0
             _sync_hardware_item_to_makerworks_product_template(session, item, include_catalog_fields=False)
@@ -1136,6 +1136,16 @@ def _sync_hardware_item_to_makerworks_product_template(
     include_catalog_fields: bool = True,
     allow_create: bool = False,
 ) -> None:
+    category = (item.category or "").strip().lower()
+    if category == "merch":
+        _sync_hardware_item_to_makerworks_merch_item(
+            session,
+            item,
+            include_catalog_fields=include_catalog_fields,
+            allow_create=allow_create,
+        )
+        return
+
     template_id = (item.makerworks_product_template_id or "").strip()
     bind = session.get_bind()
     if bind is None or bind.dialect.name != "postgresql":
@@ -1421,6 +1431,18 @@ def _sync_makerworks_merch_to_hardware(session: Session) -> dict[str, Any]:
         )
 
     conn = session.connection()
+    merch_table_exists = conn.execute(
+        text(
+            """
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_name = 'MerchItem'
+            """
+        )
+    ).first()
+    if merch_table_exists:
+        return _sync_makerworks_merch_item_to_hardware(session)
+
     table_exists = conn.execute(
         text(
             """
@@ -1623,7 +1645,13 @@ def _sync_makerworks_merch_to_hardware(session: Session) -> dict[str, Any]:
     }
 
 
-def _delete_makerworks_product_template(session: Session, template_id: str) -> None:
+def _sync_hardware_item_to_makerworks_merch_item(
+    session: Session,
+    item: HardwareItem,
+    *,
+    include_catalog_fields: bool = True,
+    allow_create: bool = False,
+) -> None:
     bind = session.get_bind()
     if bind is None or bind.dialect.name != "postgresql":
         return
@@ -1634,43 +1662,291 @@ def _delete_makerworks_product_template(session: Session, template_id: str) -> N
             """
             SELECT 1
             FROM information_schema.tables
-            WHERE table_schema = 'public' AND table_name = 'ProductTemplate'
+            WHERE table_schema = 'public' AND table_name = 'MerchItem'
             """
         )
     ).first()
     if not table_exists:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail='MakerWorks table public."ProductTemplate" was not found for merch delete writeback.',
+            detail='MakerWorks table public."MerchItem" was not found for merch sync writeback.',
         )
 
-    available_columns = _fetch_table_columns(conn, "public", "ProductTemplate")
-    id_column = _find_matching_column(available_columns, ["id"])
-    if not id_column:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail='MakerWorks ProductTemplate is missing required "id" column for merch delete writeback.',
+    merch_id = (item.makerworks_product_template_id or "").strip()
+    now = datetime.utcnow()
+    has_stock = float(item.quantity_on_hand or 0) > 0
+    availability = "in_stock" if has_stock else "sold_out"
+
+    if not merch_id:
+        if not allow_create or item.id is None:
+            return
+        merch_id = f"stockworks-merch-{item.id}"
+        insert_params: dict[str, Any] = {
+            "id": merch_id,
+            "title": item.name,
+            "description": (item.notes or "").strip() or None,
+            "category": _makerworks_merch_category(item),
+            "price_usd": float(item.unit_cost or 0),
+            "is_active": True,
+            "created_at": now,
+            "updated_at": now,
+            "availability": availability,
+        }
+        try:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO public."MerchItem" (
+                        "id",
+                        "title",
+                        "description",
+                        "category",
+                        "priceUsd",
+                        "isActive",
+                        "createdAt",
+                        "updatedAt",
+                        "availability"
+                    ) VALUES (
+                        :id,
+                        :title,
+                        :description,
+                        :category,
+                        :price_usd,
+                        :is_active,
+                        :created_at,
+                        :updated_at,
+                        :availability
+                    )
+                    """
+                ),
+                insert_params,
+            )
+        except SQLAlchemyError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f'Failed to create merch item in MakerWorks "MerchItem": {exc}',
+            ) from exc
+        item.makerworks_product_template_id = merch_id
+        session.add(item)
+
+    set_parts = ['"availability" = :availability', '"updatedAt" = :updated_at']
+    params: dict[str, Any] = {
+        "id": merch_id,
+        "availability": availability,
+        "updated_at": now,
+    }
+    if include_catalog_fields:
+        set_parts.extend(
+            [
+                '"title" = :title',
+                '"description" = :description',
+                '"category" = :category',
+                '"priceUsd" = :price_usd',
+                '"isActive" = :is_active',
+            ]
+        )
+        params.update(
+            {
+                "title": item.name,
+                "description": (item.notes or "").strip() or None,
+                "category": _makerworks_merch_category(item),
+                "price_usd": float(item.unit_cost or 0),
+                "is_active": True,
+            }
         )
 
     try:
         result = conn.execute(
             text(
-                f'DELETE FROM public."ProductTemplate" '
-                f'WHERE {_quote_identifier(id_column)} = :makerworks_id'
+                f'UPDATE public."MerchItem" '
+                f'SET {", ".join(set_parts)} '
+                f'WHERE "id" = :id'
+            ),
+            params,
+        )
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f'Failed to sync merch item to MakerWorks "MerchItem": {exc}',
+        ) from exc
+    if (result.rowcount or 0) < 1:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f'MakerWorks MerchItem "{merch_id}" was not found for merch sync writeback.',
+        )
+
+
+def _sync_makerworks_merch_item_to_hardware(session: Session) -> dict[str, Any]:
+    conn = session.connection()
+    rows = conn.execute(
+        text(
+            """
+            SELECT
+                "id" AS makerworks_id,
+                "title" AS title,
+                "description" AS description,
+                "category" AS category,
+                "priceUsd" AS price_usd,
+                COALESCE("isActive", TRUE) AS is_active,
+                "availability" AS availability
+            FROM public."MerchItem"
+            WHERE COALESCE("isActive", TRUE) = TRUE
+            ORDER BY "title" ASC
+            """
+        )
+    ).mappings().all()
+
+    linked_items = session.exec(
+        select(HardwareItem).where(HardwareItem.makerworks_product_template_id.is_not(None))
+    ).all()
+    unlinked_merch_items = session.exec(
+        select(HardwareItem).where(HardwareItem.makerworks_product_template_id.is_(None))
+    ).all()
+    linked_by_template_id = {
+        str(item.makerworks_product_template_id): item
+        for item in linked_items
+        if item.makerworks_product_template_id
+    }
+    unlinked_merch_by_name = {
+        (item.name or "").strip().lower(): item
+        for item in unlinked_merch_items
+        if (item.category or "").strip().lower() == "merch" and (item.name or "").strip()
+    }
+
+    created = 0
+    updated = 0
+    skipped = 0
+    synced_ids: set[str] = set()
+
+    for row in rows:
+        makerworks_id = str(row.get("makerworks_id") or "").strip()
+        title = str(row.get("title") or "").strip()
+        if not makerworks_id or not title:
+            skipped += 1
+            continue
+        synced_ids.add(makerworks_id)
+        item = linked_by_template_id.get(makerworks_id)
+        if item is None:
+            item = unlinked_merch_by_name.get(title.lower())
+
+        description = str(row.get("description") or "").strip() or None
+        price_usd = row.get("price_usd")
+        makerworks_category = str(row.get("category") or "").strip().lower()
+        notes = description
+        if makerworks_category:
+            notes = f"[MakerWorks category: {makerworks_category}] {description or ''}".strip()
+
+        if item:
+            item.name = title
+            item.category = "merch"
+            item.makerworks_product_template_id = makerworks_id
+            if price_usd is not None:
+                item.unit_cost = max(float(price_usd), 0.0)
+            if notes:
+                item.notes = notes
+            session.add(item)
+            updated += 1
+            continue
+
+        created_item = HardwareItem(
+            name=title,
+            category="merch",
+            unit_of_measure="piece",
+            unit_cost=max(float(price_usd or 0), 0.0),
+            quantity_on_hand=0,
+            reorder_level=0,
+            notes=notes,
+            makerworks_product_template_id=makerworks_id,
+        )
+        session.add(created_item)
+        created += 1
+
+    session.commit()
+    return {
+        "source_count": len(rows),
+        "synced_count": len(synced_ids),
+        "created": created,
+        "updated": updated,
+        "skipped": skipped,
+        "source_table": "MerchItem",
+    }
+
+
+def _delete_makerworks_merch_item(session: Session, template_id: str) -> None:
+    bind = session.get_bind()
+    if bind is None or bind.dialect.name != "postgresql":
+        return
+
+    conn = session.connection()
+    table_exists = conn.execute(
+        text(
+            """
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_name = 'MerchItem'
+            """
+        )
+    ).first()
+    if not table_exists:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail='MakerWorks table public."MerchItem" was not found for merch delete writeback.',
+        )
+
+    try:
+        result = conn.execute(
+            text(
+                """
+                DELETE FROM public."MerchItem"
+                WHERE "id" = :makerworks_id
+                """
             ),
             {"makerworks_id": template_id},
         )
     except SQLAlchemyError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Failed to delete merch item from MakerWorks ProductTemplate: {exc}",
+            detail=f'Failed to delete merch item from MakerWorks "MerchItem": {exc}',
         ) from exc
 
     if (result.rowcount or 0) < 1:
+        # Backward compatibility: clean up legacy rows created in ProductTemplate.
+        legacy_table_exists = conn.execute(
+            text(
+                """
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_name = 'ProductTemplate'
+                """
+            )
+        ).first()
+        if legacy_table_exists:
+            legacy_result = conn.execute(
+                text(
+                    """
+                    DELETE FROM public."ProductTemplate"
+                    WHERE "id" = :makerworks_id
+                    """
+                ),
+                {"makerworks_id": template_id},
+            )
+            if (legacy_result.rowcount or 0) > 0:
+                return
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f'MakerWorks ProductTemplate "{template_id}" was not found for merch delete writeback.',
+            detail=f'MakerWorks merch id "{template_id}" was not found in "MerchItem" or legacy "ProductTemplate".',
         )
+
+
+def _makerworks_merch_category(item: HardwareItem) -> str:
+    raw = (item.merch_style or "").strip().lower() or (item.category or "").strip().lower()
+    if raw in {"apparel", "accessories"}:
+        return raw
+    hint = f"{(item.name or '').strip().lower()} {raw}"
+    apparel_terms = ("shirt", "tee", "hoodie", "sweat", "jogger", "tank", "jersey", "onesie")
+    if any(term in hint for term in apparel_terms):
+        return "apparel"
+    return "accessories"
 
 
 def _set_makerworks_product_template_classification(
