@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import mimetypes
+import logging
 import os
+import re
 import secrets
 from datetime import datetime
 from pathlib import Path
@@ -108,6 +110,7 @@ app.add_middleware(
     same_site="lax",
 )
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+logger = logging.getLogger(__name__)
 
 
 def _static_file_response(path: Path, media_type: str) -> FileResponse:
@@ -828,8 +831,11 @@ def fetch_orderworks_jobs(
 
 @app.get("/bambu-view/filaments")
 def fetch_bambu_view_filaments(_: bool = Depends(require_auth)):
+    trace_id = secrets.token_hex(4)
+    _bambu_trace(trace_id, "start")
     client = get_bambu_view_client()
     if not client.is_configured:
+        _bambu_trace(trace_id, "not_configured")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Bambu View integration is not configured. Set BAMBU_VIEW_BASE_URL.",
@@ -837,34 +843,81 @@ def fetch_bambu_view_filaments(_: bool = Depends(require_auth)):
     try:
         fleet = client.fetch_fleet()
     except BambuViewNotConfiguredError:
+        _bambu_trace(trace_id, "not_configured_exception")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Bambu View integration is not configured.",
         )
     except BambuViewAuthenticationError as exc:
+        _bambu_trace(trace_id, "auth_error", error=str(exc))
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
     except BambuViewIntegrationError as exc:
+        _bambu_trace(trace_id, "integration_error", error=str(exc))
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
+    _bambu_trace(trace_id, "fleet_loaded", fleet_count=len(fleet))
     printers = []
     loaded_count = 0
+    spool_cache: dict[str, list[dict[str, Any]]] = {}
     for printer in fleet:
         if not isinstance(printer, dict):
             continue
-        ams = printer.get("ams") if isinstance(printer.get("ams"), dict) else {}
-        trays = ams.get("trays") if isinstance(ams.get("trays"), list) else []
+        printer_id = str(printer.get("printer_id") or "")
+        ams, trays = _extract_ams_trays(printer)
+        _bambu_trace(
+            trace_id,
+            "printer_parsed",
+            printer_id=printer_id,
+            printer_keys=sorted(printer.keys()),
+            ams_keys=sorted(ams.keys()) if isinstance(ams, dict) else [],
+            tray_candidates=len(trays),
+        )
         loaded_trays = [_normalize_loaded_tray(item) for item in trays if _is_loaded_tray(item)]
+        if not loaded_trays:
+            cached_spools = spool_cache.get(printer_id)
+            if cached_spools is None:
+                try:
+                    spool_payload = client.fetch_spools(printer_id=printer_id or None)
+                    raw_spools = spool_payload.get("spools") if isinstance(spool_payload.get("spools"), list) else []
+                    cached_spools = [item for item in raw_spools if isinstance(item, dict)]
+                    _bambu_trace(
+                        trace_id,
+                        "spools_loaded",
+                        printer_id=printer_id,
+                        spool_count=len(cached_spools),
+                        spool_keys=sorted(cached_spools[0].keys()) if cached_spools else [],
+                    )
+                except BambuViewIntegrationError:
+                    _bambu_trace(trace_id, "spools_load_error", printer_id=printer_id)
+                    cached_spools = []
+                spool_cache[printer_id] = cached_spools
+            loaded_trays = [
+                _normalize_spool_tray(spool, fallback_slot=index)
+                for index, spool in enumerate(cached_spools, start=1)
+                if _is_loaded_spool(spool)
+            ]
+            _bambu_trace(
+                trace_id,
+                "spools_filtered",
+                printer_id=printer_id,
+                spool_count=len(cached_spools),
+                accepted_count=len(loaded_trays),
+            )
         loaded_count += len(loaded_trays)
         printers.append(
             {
-                "printer_id": str(printer.get("printer_id") or ""),
+                "printer_id": printer_id,
                 "printer_name": str(printer.get("printer_name") or printer.get("printer_id") or "Printer"),
                 "ams_slots": ams.get("slots"),
                 "ams_units": ams.get("units"),
                 "loaded_trays": loaded_trays,
             }
         )
-    return {"printers": printers, "loaded_count": loaded_count, "base_url": client.base_url}
+    _bambu_trace(trace_id, "done", printer_count=len(printers), loaded_count=loaded_count)
+    payload = {"printers": printers, "loaded_count": loaded_count, "base_url": client.base_url}
+    if _bambu_trace_enabled():
+        payload["trace_id"] = trace_id
+    return payload
 
 
 @app.get("/health", tags=["system"])
@@ -880,12 +933,41 @@ def _ensure_material_exists(session: Session, material_id: int) -> None:
 def _is_loaded_tray(tray: object) -> bool:
     if not isinstance(tray, dict):
         return False
-    material = str(tray.get("material") or tray.get("tray_type") or "").strip()
-    name = str(tray.get("name") or tray.get("tray_id_name") or "").strip()
-    state_value = str(tray.get("state") or tray.get("tray_state") or "").strip().lower()
-    if material or name:
+    material = _first_non_empty_str(
+        tray.get("material"),
+        tray.get("tray_type"),
+        tray.get("type"),
+        tray.get("filament_type"),
+    )
+    name = _first_non_empty_str(
+        tray.get("name"),
+        tray.get("tray_id_name"),
+        tray.get("tray_name"),
+        tray.get("filament_name"),
+    )
+    state_value = _first_non_empty_str(
+        tray.get("state"),
+        tray.get("tray_state"),
+        tray.get("status"),
+    ).lower()
+    if _looks_like_loaded_label(material) or name:
         return True
-    if state_value in {"loaded", "ready", "available", "installed"}:
+    if state_value in {"loaded", "ready", "available", "installed", "active", "in_use", "in-use"}:
+        return True
+    remain = tray.get("remain")
+    if isinstance(remain, (int, float)) and remain >= 0:
+        return True
+    if isinstance(remain, str) and remain.strip():
+        try:
+            if float(remain) >= 0:
+                return True
+        except ValueError:
+            pass
+    tray_uuid = _first_non_empty_str(tray.get("tray_uuid"))
+    if tray_uuid and tray_uuid.strip("0"):
+        return True
+    tag_uid = _first_non_empty_str(tray.get("tag_uid"))
+    if tag_uid and tag_uid.strip("0"):
         return True
     if state_value in {"", "none", "empty"}:
         return False
@@ -895,15 +977,177 @@ def _is_loaded_tray(tray: object) -> bool:
 def _normalize_loaded_tray(tray: object) -> dict[str, object]:
     if not isinstance(tray, dict):
         return {"id": "", "unit": None, "slot": None, "material": "", "name": "", "color": "", "state": ""}
+    color_value = _first_non_empty_str(
+        tray.get("color"),
+        tray.get("tray_color"),
+    )
+    if not color_value:
+        cols = tray.get("cols")
+        if isinstance(cols, list):
+            for item in cols:
+                if isinstance(item, str) and item.strip():
+                    color_value = item.strip()
+                    break
+    tray_id = _first_non_empty_str(
+        tray.get("id"),
+        tray.get("tray_id"),
+    )
     return {
-        "id": str(tray.get("id") or ""),
-        "unit": tray.get("unit"),
-        "slot": tray.get("slot"),
-        "material": str(tray.get("material") or tray.get("tray_type") or "").strip(),
-        "name": str(tray.get("name") or tray.get("tray_id_name") or "").strip(),
-        "color": str(tray.get("color") or "").strip(),
-        "state": str(tray.get("state") or tray.get("tray_state") or "").strip(),
+        "id": tray_id,
+        "unit": _first_non_empty_value(tray.get("unit"), tray.get("ams_id"), tray.get("__unit")),
+        "slot": _first_non_empty_value(tray.get("slot"), tray.get("tray_id"), tray.get("id"), tray.get("__slot")),
+        "material": _first_non_empty_str(
+            tray.get("material"),
+            tray.get("tray_type"),
+            tray.get("type"),
+            tray.get("filament_type"),
+        ),
+        "name": _first_non_empty_str(
+            tray.get("name"),
+            tray.get("tray_id_name"),
+            tray.get("tray_name"),
+            tray.get("filament_name"),
+        ),
+        "color": color_value,
+        "state": _first_non_empty_str(
+            tray.get("state"),
+            tray.get("tray_state"),
+            tray.get("status"),
+        ),
     }
+
+
+def _is_loaded_spool(spool: object) -> bool:
+    if not isinstance(spool, dict):
+        return False
+    material = _first_non_empty_str(spool.get("material"))
+    color = _first_non_empty_str(spool.get("color"))
+    tray_label = _first_non_empty_str(spool.get("tray"))
+    # /api/spools can include library placeholders (e.g. "Spool <date>") with no tray linkage.
+    # Treat a spool as loaded only when it carries tray/material/color identity from the printer state.
+    return bool(tray_label or material or color)
+
+
+def _normalize_spool_tray(spool: dict[str, Any], fallback_slot: int) -> dict[str, object]:
+    tray_label = _first_non_empty_str(spool.get("tray"))
+    unit, slot = _parse_tray_label(tray_label)
+    if slot is None:
+        slot = fallback_slot
+    name = _first_non_empty_str(spool.get("name"))
+    material = _first_non_empty_str(spool.get("material"))
+    remaining = spool.get("remaining_pct")
+    state = "loaded"
+    if isinstance(remaining, (int, float)):
+        state = f"{remaining:.0f}% remaining"
+    elif isinstance(remaining, str) and remaining.strip():
+        state = f"{remaining.strip()}% remaining"
+    return {
+        "id": _first_non_empty_str(spool.get("id")),
+        "unit": unit,
+        "slot": slot,
+        "material": material,
+        "name": name,
+        "color": _first_non_empty_str(spool.get("color")),
+        "state": state,
+    }
+
+
+def _parse_tray_label(label: str) -> tuple[object, object]:
+    value = label.strip().upper()
+    if not value:
+        return None, None
+    match = re.fullmatch(r"([A-Z]?)(\d+)", value)
+    if not match:
+        return None, None
+    unit_code = match.group(1)
+    slot_value = int(match.group(2))
+    unit: object = 1
+    if unit_code:
+        unit = ord(unit_code) - ord("A") + 1
+    return unit, slot_value
+
+
+def _extract_ams_trays(printer: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    ams = printer.get("ams") if isinstance(printer.get("ams"), dict) else {}
+    trays: list[dict[str, Any]] = []
+
+    def _append_trays(items: object, unit_hint: object = None) -> None:
+        if not isinstance(items, list):
+            return
+        for idx, tray in enumerate(items):
+            if not isinstance(tray, dict):
+                continue
+            normalized = dict(tray)
+            if normalized.get("unit") is None and unit_hint is not None:
+                normalized["__unit"] = unit_hint
+            if normalized.get("slot") is None:
+                normalized["__slot"] = idx
+            trays.append(normalized)
+
+    _append_trays(ams.get("trays"))
+    _append_trays(ams.get("tray"))
+
+    units = ams.get("ams")
+    if isinstance(units, list):
+        for unit_idx, unit in enumerate(units):
+            if not isinstance(unit, dict):
+                continue
+            unit_hint = _first_non_empty_value(unit.get("id"), unit_idx)
+            _append_trays(unit.get("tray"), unit_hint=unit_hint)
+            _append_trays(unit.get("trays"), unit_hint=unit_hint)
+
+    if not trays and isinstance(printer.get("trays"), list):
+        _append_trays(printer.get("trays"))
+
+    if "units" not in ams:
+        if isinstance(units, list):
+            ams = {**ams, "units": len(units)}
+        elif trays:
+            ams = {**ams, "units": 1}
+    if "slots" not in ams and trays:
+        ams = {**ams, "slots": len(trays)}
+
+    return ams, trays
+
+
+def _first_non_empty_str(*values: object) -> str:
+    for value in values:
+        if isinstance(value, str):
+            stripped = value.strip()
+            if stripped:
+                return stripped
+    return ""
+
+
+def _first_non_empty_value(*values: object) -> object:
+    for value in values:
+        if value is None:
+            continue
+        if isinstance(value, str) and not value.strip():
+            continue
+        return value
+    return None
+
+
+def _looks_like_loaded_label(value: str) -> bool:
+    normalized = value.strip().lower()
+    if not normalized:
+        return False
+    return normalized not in {"empty", "none", "null", "unknown", "n/a", "-"}
+
+
+def _bambu_trace_enabled() -> bool:
+    raw = (os.environ.get("BAMBU_VIEW_TRACE") or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _bambu_trace(trace_id: str, event: str, **fields: Any) -> None:
+    if not _bambu_trace_enabled():
+        return
+    if fields:
+        logger.warning("bambu_trace trace_id=%s event=%s fields=%s", trace_id, event, fields)
+        return
+    logger.warning("bambu_trace trace_id=%s event=%s", trace_id, event)
 
 
 def _delete_material_dependencies(session: Session, material_id: int) -> None:

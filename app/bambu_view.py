@@ -134,6 +134,27 @@ class BambuViewClient:
             raise BambuViewIntegrationError("Bambu View response did not include fleet data.")
         return fleet
 
+    def fetch_spools(self, printer_id: Optional[str] = None) -> Dict[str, Any]:
+        params: Dict[str, str] = {}
+        if printer_id:
+            params["printer_id"] = printer_id
+        response = self._request("GET", "/api/spools", params=params or None)
+        if response.status_code == 401:
+            raise BambuViewAuthenticationError(
+                "Bambu View rejected the spools request. Configure BAMBU_VIEW_API_KEY or BAMBU_VIEW_ADMIN_* credentials."
+            )
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise BambuViewIntegrationError(f"Bambu View spools request failed: {exc}") from exc
+        try:
+            data = response.json()
+        except ValueError as exc:
+            raise BambuViewIntegrationError("Bambu View spools response returned invalid JSON.") from exc
+        if not isinstance(data, dict):
+            raise BambuViewIntegrationError("Bambu View spools response did not include an object payload.")
+        return data
+
 
 _BAMBU_VIEW_CLIENT: Optional[BambuViewClient] = None
 
