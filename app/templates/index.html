@@ -12,6 +12,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="StockWorks" />
     <meta name="apple-touch-fullscreen" content="yes" />
+    <meta name="csrf-token" content="{{ csrf_token or '' }}" />
     <title>StockWorks Inventory</title>
     <link rel="stylesheet" href="/static/styles.css" />
     <link rel="manifest" href="/manifest.webmanifest" />
@@ -996,6 +997,7 @@
               <h3>Session</h3>
               <p>End your current StockWorks session.</p>
               <form method="post" action="/logout" class="settings-actions">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
                 <button type="submit">Sign out</button>
               </form>
             </section>

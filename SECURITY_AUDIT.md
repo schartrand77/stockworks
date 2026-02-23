@@ -144,7 +144,7 @@ Commands used:
 
 ## Prioritized Remediation Plan
 
-1. **Immediate (0–2 days)**
+1. **Immediate (0-2 days)**
    - Remove insecure defaults for credentials/secret and enforce strong env requirements.
    - Patch `/public/{asset_path:path}` traversal guard.
    - Add CSRF protection for cookie-authenticated writes.
@@ -159,10 +159,11 @@ Commands used:
 
 ## Quick Wins Checklist
 
-- [ ] Fail startup when `ADMIN_PASSWORD` is default/empty.
-- [ ] Fail startup when `SECRET_KEY` equals placeholder or entropy is too low.
-- [ ] Enforce `PUBLIC_DIR` path containment before `FileResponse`.
-- [ ] Add CSRF middleware/token checks for all modifying endpoints.
-- [ ] Set session cookie `https_only=True` and stronger same-site policy.
-- [ ] Add `/login` rate limiting and failed-attempt telemetry.
-- [ ] Upgrade Jinja2, python-multipart, Pillow, and Starlette-compatible stack.
+- [x] Fail startup when `ADMIN_PASSWORD` is default/empty.
+- [x] Fail startup when `SECRET_KEY` equals placeholder or entropy is too low.
+- [x] Enforce `PUBLIC_DIR` path containment before `FileResponse`.
+- [x] Add CSRF middleware/token checks for all modifying endpoints.
+- [x] Set session cookie `https_only=True` and stronger same-site policy.
+- [x] Add `/login` rate limiting and failed-attempt telemetry.
+- [x] Upgrade Jinja2, python-multipart, Pillow, and Starlette-compatible stack.
+

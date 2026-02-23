@@ -9,6 +9,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="StockWorks" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="csrf-token" content="{{ csrf_token or '' }}" />
     <title>Sign in - StockWorks</title>
     <link rel="stylesheet" href="/static/styles.css" />
     <link rel="manifest" href="/manifest.webmanifest" />
@@ -27,6 +28,7 @@
         <div class="message error">{{ error }}</div>
         {% endif %}
         <form method="post" action="/login" class="auth-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
           <label>
             Username
             <input type="text" name="username" autocomplete="username" required value="{{ username or '' }}" />

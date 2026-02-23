@@ -26,6 +26,8 @@ const state = {
 };
 
 const messageEl = document.getElementById("message");
+const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+const csrfToken = csrfMeta ? String(csrfMeta.content || "").trim() : "";
 const refreshAllBtn = document.getElementById("refresh-all");
 const tabButtons = Array.from(document.querySelectorAll(".tab-button"));
 const tabPanels = Array.from(document.querySelectorAll(".tab-panel"));
@@ -3397,13 +3399,20 @@ function openBarcodePrintWindow({ title, barcodeUrl, labelLines, barcodeValue })
 }
 
 async function api(path, { method = "GET", body, headers } = {}) {
+  const normalizedMethod = String(method || "GET").toUpperCase();
   const config = {
-    method,
+    method: normalizedMethod,
     headers: {
       ...(headers || {}),
     },
     credentials: "same-origin",
   };
+  if (!["GET", "HEAD", "OPTIONS"].includes(normalizedMethod)) {
+    if (!csrfToken) {
+      throw new Error("CSRF token is missing. Reload the page and try again.");
+    }
+    config.headers["X-CSRF-Token"] = csrfToken;
+  }
   if (body !== undefined) {
     config.headers["Content-Type"] = "application/json";
     config.body = JSON.stringify(body);

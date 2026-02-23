@@ -6,11 +6,14 @@ import logging
 import os
 import re
 import secrets
+import threading
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, List, Optional
+from urllib.parse import urlparse
 
-from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request, status
+from fastapi import Depends, FastAPI, Form, Header, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -87,13 +90,52 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 mimetypes.add_type("application/manifest+json", ".webmanifest")
 
-ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme")
-SECRET_KEY = os.environ.get("SECRET_KEY", "please-change-me")
+ADMIN_USERNAME = (os.environ.get("ADMIN_USERNAME") or "admin").strip() or "admin"
+ADMIN_PASSWORD = (os.environ.get("ADMIN_PASSWORD") or "").strip()
+SECRET_KEY = (os.environ.get("SECRET_KEY") or "").strip()
 SESSION_COOKIE = "stockworks-session"
+SESSION_MAX_AGE_SECONDS = int(os.environ.get("SESSION_MAX_AGE_SECONDS", "28800"))
+SESSION_SAME_SITE = (os.environ.get("SESSION_SAME_SITE") or "strict").strip().lower()
+SESSION_HTTPS_ONLY = (os.environ.get("SESSION_HTTPS_ONLY") or "1").strip().lower() in {"1", "true", "yes", "on"}
+CSRF_TOKEN_LENGTH = 48
+LOGIN_RATE_LIMIT_ATTEMPTS = int(os.environ.get("LOGIN_RATE_LIMIT_ATTEMPTS", "5"))
+LOGIN_RATE_LIMIT_WINDOW_SECONDS = int(os.environ.get("LOGIN_RATE_LIMIT_WINDOW_SECONDS", "300"))
+LOGIN_RATE_LIMIT_BLOCK_SECONDS = int(os.environ.get("LOGIN_RATE_LIMIT_BLOCK_SECONDS", "900"))
+_SECURE_PLACEHOLDERS = {
+    "",
+    "changeme",
+    "please-change-me",
+    "replace-me",
+    "default",
+    "admin",
+    "password",
+    "secret",
+}
+_LOGIN_RATE_LIMIT_LOCK = threading.Lock()
+_LOGIN_RATE_LIMIT_STATE: dict[str, dict[str, Any]] = {}
+logger = logging.getLogger(__name__)
 
-if not SECRET_KEY:
-    raise RuntimeError("SECRET_KEY must be configured via SECRET_KEY environment variable.")
+
+def _validate_security_config() -> None:
+    if not ADMIN_PASSWORD:
+        raise RuntimeError("ADMIN_PASSWORD must be configured via environment variable.")
+    if ADMIN_PASSWORD.lower() in _SECURE_PLACEHOLDERS:
+        raise RuntimeError("ADMIN_PASSWORD must not be a default placeholder value.")
+    if len(ADMIN_PASSWORD) < 12:
+        raise RuntimeError("ADMIN_PASSWORD must be at least 12 characters.")
+    if not SECRET_KEY:
+        raise RuntimeError("SECRET_KEY must be configured via environment variable.")
+    if SECRET_KEY.lower() in _SECURE_PLACEHOLDERS:
+        raise RuntimeError("SECRET_KEY must not be a default placeholder value.")
+    if len(SECRET_KEY) < 32:
+        raise RuntimeError("SECRET_KEY must be at least 32 characters.")
+    if SESSION_SAME_SITE not in {"lax", "strict", "none"}:
+        raise RuntimeError("SESSION_SAME_SITE must be one of: lax, strict, none.")
+    if SESSION_MAX_AGE_SECONDS < 300:
+        raise RuntimeError("SESSION_MAX_AGE_SECONDS must be at least 300.")
+
+
+_validate_security_config()
 
 app = FastAPI(title="StockWorks", version="1.0.0")
 app.add_middleware(
@@ -107,10 +149,11 @@ app.add_middleware(
     SessionMiddleware,
     secret_key=SECRET_KEY,
     session_cookie=SESSION_COOKIE,
-    same_site="lax",
+    same_site=SESSION_SAME_SITE,
+    https_only=SESSION_HTTPS_ONLY,
+    max_age=SESSION_MAX_AGE_SECONDS,
 )
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
-logger = logging.getLogger(__name__)
 
 
 def _static_file_response(path: Path, media_type: str) -> FileResponse:
@@ -135,7 +178,10 @@ def web_manifest() -> FileResponse:
 @app.get("/public/{asset_path:path}", include_in_schema=False)
 def public_assets(asset_path: str) -> FileResponse:
     """Serve files from the repository-level public directory, even when not mounted."""
-    target = PUBLIC_DIR / asset_path
+    public_root = PUBLIC_DIR.resolve()
+    target = (PUBLIC_DIR / asset_path).resolve()
+    if public_root not in target.parents and target != public_root:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Public asset not found")
     if not target.is_file():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Public asset not found")
     media_type, _ = mimetypes.guess_type(str(target))
@@ -151,14 +197,115 @@ def _is_authenticated(request: Request) -> bool:
     return bool(request.session.get("authenticated"))
 
 
+def _new_csrf_token() -> str:
+    return secrets.token_urlsafe(CSRF_TOKEN_LENGTH)
+
+
+def _ensure_csrf_token(request: Request) -> str:
+    token = request.session.get("csrf_token")
+    if not token or not isinstance(token, str):
+        token = _new_csrf_token()
+        request.session["csrf_token"] = token
+    return token
+
+
+def _same_origin(request: Request) -> bool:
+    expected = f"{request.url.scheme}://{request.url.netloc}"
+    origin = request.headers.get("origin")
+    referer = request.headers.get("referer")
+    candidate = origin or referer
+    if not candidate:
+        return False
+    parsed = urlparse(candidate)
+    if not parsed.scheme or not parsed.netloc:
+        return False
+    return f"{parsed.scheme}://{parsed.netloc}".lower() == expected.lower()
+
+
+def _require_same_origin(request: Request) -> None:
+    # Some browser/proxy combinations omit Origin/Referer on same-site form posts.
+    # In that case we still require a valid CSRF token and allow the request.
+    if not request.headers.get("origin") and not request.headers.get("referer"):
+        return
+    if not _same_origin(request):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid request origin.")
+
+
+def _validate_csrf_token(request: Request, csrf_token: str | None) -> None:
+    expected = request.session.get("csrf_token")
+    if not expected or not csrf_token or not isinstance(expected, str):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Missing CSRF token.")
+    if not secrets.compare_digest(expected, csrf_token):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid CSRF token.")
+
+
 def require_auth(request: Request) -> bool:
     if not _is_authenticated(request):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
     return True
 
 
+def require_csrf(request: Request, csrf_header: str | None = Header(default=None, alias="X-CSRF-Token")) -> bool:
+    _require_same_origin(request)
+    _validate_csrf_token(request, csrf_header)
+    return True
+
+
 def _credentials_valid(username: str, password: str) -> bool:
-    return secrets.compare_digest(username.strip(), ADMIN_USERNAME) and secrets.compare_digest(password, ADMIN_PASSWORD)
+    normalized_username = username.strip()
+    if not secrets.compare_digest(normalized_username, ADMIN_USERNAME):
+        return False
+    if secrets.compare_digest(password, ADMIN_PASSWORD):
+        return True
+    # Tolerate accidental leading/trailing whitespace from copy/paste.
+    return secrets.compare_digest(password.strip(), ADMIN_PASSWORD)
+
+
+def _login_rate_limit_key(request: Request, username: str) -> str:
+    forwarded_for = request.headers.get("x-forwarded-for", "")
+    client_ip = (forwarded_for.split(",")[0].strip() if forwarded_for else "") or (
+        request.client.host if request.client else "unknown"
+    )
+    return f"{client_ip.lower()}::{username.strip().lower()}"
+
+
+def _is_login_rate_limited(key: str) -> int:
+    now = time.time()
+    with _LOGIN_RATE_LIMIT_LOCK:
+        state = _LOGIN_RATE_LIMIT_STATE.get(key)
+        if not state:
+            return 0
+        blocked_until = float(state.get("blocked_until", 0.0))
+        if blocked_until > now:
+            return max(1, int(blocked_until - now))
+        failures = [float(ts) for ts in state.get("failures", []) if now - float(ts) <= LOGIN_RATE_LIMIT_WINDOW_SECONDS]
+        if failures:
+            state["failures"] = failures
+            _LOGIN_RATE_LIMIT_STATE[key] = state
+        else:
+            _LOGIN_RATE_LIMIT_STATE.pop(key, None)
+        return 0
+
+
+def _record_failed_login(key: str) -> int:
+    now = time.time()
+    with _LOGIN_RATE_LIMIT_LOCK:
+        state = _LOGIN_RATE_LIMIT_STATE.setdefault(key, {"failures": [], "blocked_until": 0.0})
+        failures = [float(ts) for ts in state.get("failures", []) if now - float(ts) <= LOGIN_RATE_LIMIT_WINDOW_SECONDS]
+        failures.append(now)
+        state["failures"] = failures
+        if len(failures) >= LOGIN_RATE_LIMIT_ATTEMPTS:
+            blocked_until = now + LOGIN_RATE_LIMIT_BLOCK_SECONDS
+            state["blocked_until"] = blocked_until
+            _LOGIN_RATE_LIMIT_STATE[key] = state
+            return max(1, int(blocked_until - now))
+        _LOGIN_RATE_LIMIT_STATE[key] = state
+        return 0
+
+
+def _clear_failed_logins(key: str) -> None:
+    with _LOGIN_RATE_LIMIT_LOCK:
+        _LOGIN_RATE_LIMIT_STATE.pop(key, None)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -166,23 +313,53 @@ def root(request: Request):
     """Serve the HTML shell for the single-page UI."""
     if not _is_authenticated(request):
         return RedirectResponse("/login", status_code=status.HTTP_302_FOUND)
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse("index.html", {"request": request, "csrf_token": _ensure_csrf_token(request)})
 
 
 @app.get("/login", response_class=HTMLResponse)
 def login_page(request: Request):
     if _is_authenticated(request):
         return RedirectResponse("/", status_code=status.HTTP_303_SEE_OTHER)
-    return templates.TemplateResponse("login.html", {"request": request, "error": None, "username": ""})
+    return templates.TemplateResponse(
+        "login.html",
+        {"request": request, "error": None, "username": "", "csrf_token": _ensure_csrf_token(request)},
+    )
 
 
 @app.post("/login")
-async def login(request: Request, username: str = Form(...), password: str = Form(...)):
+async def login(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    csrf_token: str = Form(...),
+):
+    _require_same_origin(request)
+    _validate_csrf_token(request, csrf_token)
+    key = _login_rate_limit_key(request, username)
+    blocked_for = _is_login_rate_limited(key)
+    if blocked_for:
+        logger.warning("Blocked login attempt for key=%s blocked_for=%ss", key, blocked_for)
+        context = {
+            "request": request,
+            "error": f"Too many login attempts. Try again in {blocked_for} seconds.",
+            "username": username,
+            "csrf_token": _ensure_csrf_token(request),
+        }
+        return templates.TemplateResponse("login.html", context, status_code=status.HTTP_429_TOO_MANY_REQUESTS)
     if _credentials_valid(username, password):
+        _clear_failed_logins(key)
         request.session["authenticated"] = True
         request.session["username"] = ADMIN_USERNAME
+        request.session["csrf_token"] = _new_csrf_token()
         return RedirectResponse("/", status_code=status.HTTP_303_SEE_OTHER)
-    context = {"request": request, "error": "Invalid username or password.", "username": username}
+    blocked_for = _record_failed_login(key)
+    logger.warning("Failed login for key=%s blocked_for=%ss", key, blocked_for)
+    context = {
+        "request": request,
+        "error": "Invalid username or password." if not blocked_for else f"Too many login attempts. Try again in {blocked_for} seconds.",
+        "username": username,
+        "csrf_token": _ensure_csrf_token(request),
+    }
     return templates.TemplateResponse("login.html", context, status_code=status.HTTP_401_UNAUTHORIZED)
 
 
@@ -192,7 +369,9 @@ def list_bambu_x1c_filament_types(_: bool = Depends(require_auth)) -> dict[str, 
 
 
 @app.post("/logout")
-def logout(request: Request):
+def logout(request: Request, csrf_token: str = Form(...)):
+    _require_same_origin(request)
+    _validate_csrf_token(request, csrf_token)
     request.session.clear()
     return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
 
@@ -203,6 +382,7 @@ def create_material(
     payload: MaterialCreate,
     session: Session = Depends(get_session),
     _: bool = Depends(require_auth),
+    _csrf: bool = Depends(require_csrf),
 ):
     data = payload.dict()
     data["color_hex"] = normalize_hex(data.get("color_hex"))
@@ -271,6 +451,7 @@ def update_material(
     payload: MaterialUpdate,
     session: Session = Depends(get_session),
     _: bool = Depends(require_auth),
+    _csrf: bool = Depends(require_csrf),
 ):
     material = session.get(Material, material_id)
     if not material:
@@ -323,6 +504,7 @@ def create_material_cost_history(
     payload: MaterialCostHistoryCreate,
     session: Session = Depends(get_session),
     _: bool = Depends(require_auth),
+    _csrf: bool = Depends(require_csrf),
 ):
     if material_id != payload.material_id:
         raise HTTPException(status_code=400, detail="Material ID mismatch")
@@ -360,7 +542,12 @@ def get_material_barcode(
 
 
 @app.delete("/materials/{material_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_material(material_id: int, session: Session = Depends(get_session), _: bool = Depends(require_auth)):
+def delete_material(
+    material_id: int,
+    session: Session = Depends(get_session),
+    _: bool = Depends(require_auth),
+    _csrf: bool = Depends(require_csrf),
+):
     material = session.get(Material, material_id)
     if not material:
         raise HTTPException(status_code=404, detail="Material not found")
@@ -383,6 +570,7 @@ def create_inventory_item(
     payload: InventoryItemCreate,
     session: Session = Depends(get_session),
     _: bool = Depends(require_auth),
+    _csrf: bool = Depends(require_csrf),
 ):
     _ensure_material_exists(session, payload.material_id)
     data = payload.dict()
@@ -447,6 +635,7 @@ def update_inventory_item(
     payload: InventoryItemUpdate,
     session: Session = Depends(get_session),
     _: bool = Depends(require_auth),
+    _csrf: bool = Depends(require_csrf),
 ):
     item = session.get(InventoryItem, item_id)
     if not item:
@@ -465,7 +654,12 @@ def update_inventory_item(
 
 
 @app.delete("/inventory/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_inventory_item(item_id: int, session: Session = Depends(get_session), _: bool = Depends(require_auth)):
+def delete_inventory_item(
+    item_id: int,
+    session: Session = Depends(get_session),
+    _: bool = Depends(require_auth),
+    _csrf: bool = Depends(require_csrf),
+):
     item = session.get(InventoryItem, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Inventory item not found")
@@ -480,6 +674,7 @@ def create_stock_movement(
     payload: StockMovementCreate,
     session: Session = Depends(get_session),
     _: bool = Depends(require_auth),
+    _csrf: bool = Depends(require_csrf),
 ):
     item = session.get(InventoryItem, payload.inventory_item_id)
     if not item:
@@ -514,6 +709,7 @@ def create_hardware_item(
     payload: HardwareItemCreate,
     session: Session = Depends(get_session),
     _: bool = Depends(require_auth),
+    _csrf: bool = Depends(require_csrf),
 ):
     item = HardwareItem.from_orm(payload)
     session.add(item)
@@ -578,6 +774,7 @@ def update_hardware_item(
     payload: HardwareItemUpdate,
     session: Session = Depends(get_session),
     _: bool = Depends(require_auth),
+    _csrf: bool = Depends(require_csrf),
 ):
     item = session.get(HardwareItem, hardware_id)
     if not item:
@@ -594,7 +791,12 @@ def update_hardware_item(
 
 
 @app.delete("/hardware/{hardware_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_hardware_item(hardware_id: int, session: Session = Depends(get_session), _: bool = Depends(require_auth)):
+def delete_hardware_item(
+    hardware_id: int,
+    session: Session = Depends(get_session),
+    _: bool = Depends(require_auth),
+    _csrf: bool = Depends(require_csrf),
+):
     item = session.get(HardwareItem, hardware_id)
     if not item:
         raise HTTPException(status_code=404, detail="Hardware item not found")
@@ -615,6 +817,7 @@ def create_hardware_movement(
     payload: HardwareMovementCreate,
     session: Session = Depends(get_session),
     _: bool = Depends(require_auth),
+    _csrf: bool = Depends(require_csrf),
 ):
     item = session.get(HardwareItem, payload.hardware_item_id)
     if not item:
@@ -646,6 +849,7 @@ def list_hardware_movements(hardware_id: int, session: Session = Depends(get_ses
 def sync_makerworks_merch_inventory(
     session: Session = Depends(get_session),
     _: bool = Depends(require_auth),
+    _csrf: bool = Depends(require_csrf),
 ):
     return _sync_makerworks_merch_to_hardware(session)
 
@@ -656,6 +860,7 @@ def create_print_model(
     payload: PrintModelCreate,
     session: Session = Depends(get_session),
     _: bool = Depends(require_auth),
+    _csrf: bool = Depends(require_csrf),
 ):
     data = payload.dict()
     data["sku"] = normalize_sku(data.get("sku"))
@@ -719,6 +924,7 @@ def update_print_model(
     payload: PrintModelUpdate,
     session: Session = Depends(get_session),
     _: bool = Depends(require_auth),
+    _csrf: bool = Depends(require_csrf),
 ):
     model = session.get(PrintModel, model_id)
     if not model:
@@ -735,7 +941,12 @@ def update_print_model(
 
 
 @app.delete("/models/{model_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_print_model(model_id: int, session: Session = Depends(get_session), _: bool = Depends(require_auth)):
+def delete_print_model(
+    model_id: int,
+    session: Session = Depends(get_session),
+    _: bool = Depends(require_auth),
+    _csrf: bool = Depends(require_csrf),
+):
     model = session.get(PrintModel, model_id)
     if not model:
         raise HTTPException(status_code=404, detail="Model not found")
@@ -752,6 +963,7 @@ def create_print_model_sale(
     payload: PrintModelSaleCreate,
     session: Session = Depends(get_session),
     _: bool = Depends(require_auth),
+    _csrf: bool = Depends(require_csrf),
 ):
     _ensure_model_exists(session, payload.model_id)
     sale = PrintModelSale.from_orm(payload)
@@ -776,6 +988,7 @@ def calculate_quote(
     payload: PricingRequest,
     session: Session = Depends(get_session),
     _: bool = Depends(require_auth),
+    _csrf: bool = Depends(require_csrf),
 ):
     material = session.get(Material, payload.material_id)
     if not material:
@@ -2249,6 +2462,11 @@ def _find_matching_column(available: set[str], candidates: list[str]) -> Optiona
 
 
 def _quote_identifier(identifier: str) -> str:
+    if not identifier or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", identifier):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Unsupported SQL identifier encountered: {identifier!r}",
+        )
     escaped = identifier.replace('"', '""')
     return f'"{escaped}"'
 

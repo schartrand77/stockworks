@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 import threading
 import time
 from dataclasses import dataclass
@@ -162,6 +163,8 @@ _ORDERWORKS_JOB_COLUMNS: List[ColumnMapping] = [
 
 
 def _quote_identifier(identifier: str) -> str:
+    if not identifier or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", identifier):
+        raise OrderWorksDatabaseUnavailableError(f"Unsupported SQL identifier encountered: {identifier!r}.")
     escaped = identifier.replace('"', '""')
     return f'"{escaped}"'
 
