@@ -83,6 +83,27 @@ from .models import (
     StockMovementRead,
 )
 
+
+def _normalize_origin(scheme: str, netloc: str) -> str:
+    host, sep, port = netloc.partition(":")
+    if sep and ((scheme.lower() == "https" and port == "443") or (scheme.lower() == "http" and port == "80")):
+        netloc = host
+    return f"{scheme.lower()}://{netloc.lower()}"
+
+
+def _parse_origin_list(raw_origins: str) -> list[str]:
+    parsed_origins: list[str] = []
+    for raw_origin in raw_origins.split(","):
+        origin = raw_origin.strip()
+        if not origin:
+            continue
+        parsed = urlparse(origin)
+        if not parsed.scheme or not parsed.netloc:
+            raise RuntimeError(f"Invalid origin value: {origin!r}")
+        parsed_origins.append(_normalize_origin(parsed.scheme, parsed.netloc))
+    return parsed_origins
+
+
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 PUBLIC_DIR = BASE_DIR.parent / "public"
@@ -102,15 +123,14 @@ SESSION_MAX_AGE_SECONDS = int(os.environ.get("SESSION_MAX_AGE_SECONDS", "28800")
 SESSION_SAME_SITE = (os.environ.get("SESSION_SAME_SITE") or "strict").strip().lower()
 SESSION_HTTPS_ONLY = (os.environ.get("SESSION_HTTPS_ONLY") or "1").strip().lower() in {"1", "true", "yes", "on"}
 TRUST_X_FORWARDED_FOR = (os.environ.get("TRUST_X_FORWARDED_FOR") or "0").strip().lower() in {"1", "true", "yes", "on"}
-CORS_ALLOW_ORIGINS = [
-    origin.strip() for origin in (os.environ.get("CORS_ALLOW_ORIGINS") or "").split(",") if origin.strip()
-]
+CORS_ALLOW_ORIGINS = _parse_origin_list(os.environ.get("CORS_ALLOW_ORIGINS") or "")
 CORS_ALLOW_CREDENTIALS = (os.environ.get("CORS_ALLOW_CREDENTIALS") or "0").strip().lower() in {
     "1",
     "true",
     "yes",
     "on",
 }
+CSRF_TRUSTED_ORIGINS = set(_parse_origin_list(os.environ.get("CSRF_TRUSTED_ORIGINS") or ""))
 CSRF_TOKEN_LENGTH = 48
 LOGIN_RATE_LIMIT_ATTEMPTS = int(os.environ.get("LOGIN_RATE_LIMIT_ATTEMPTS", "5"))
 LOGIN_RATE_LIMIT_WINDOW_SECONDS = int(os.environ.get("LOGIN_RATE_LIMIT_WINDOW_SECONDS", "300"))
@@ -262,18 +282,15 @@ def _ensure_csrf_token(request: Request) -> str:
 
 
 def _same_origin(request: Request) -> bool:
-    def _normalize_origin(scheme: str, netloc: str) -> str:
-        host, sep, port = netloc.partition(":")
-        if sep and ((scheme.lower() == "https" and port == "443") or (scheme.lower() == "http" and port == "80")):
-            netloc = host
-        return f"{scheme.lower()}://{netloc.lower()}"
-
     expected_origins = {_normalize_origin(request.url.scheme, request.url.netloc)}
+    expected_origins.update(CSRF_TRUSTED_ORIGINS)
 
     forwarded_proto = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip()
     forwarded_host = (request.headers.get("x-forwarded-host") or "").split(",")[0].strip()
-    if forwarded_proto and forwarded_host:
-        expected_origins.add(_normalize_origin(forwarded_proto, forwarded_host))
+    if forwarded_proto:
+        host = forwarded_host or (request.headers.get("host") or "").strip()
+        if host:
+            expected_origins.add(_normalize_origin(forwarded_proto, host))
 
     origin = request.headers.get("origin")
     referer = request.headers.get("referer")
