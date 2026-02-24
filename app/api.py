@@ -1,6 +1,7 @@
 """FastAPI application implementing inventory control for a 3D printing service."""
 from __future__ import annotations
 
+import base64
 import mimetypes
 import logging
 import os
@@ -187,6 +188,18 @@ app.add_middleware(SecurityHeadersMiddleware)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
+@app.middleware("http")
+async def stockworks_api_prefix_compat(request: Request, call_next):
+    """Support legacy /api/stockworks/* paths by rewriting to root routes."""
+    prefix = "/api/stockworks"
+    path = request.scope.get("path", "")
+    if path == prefix or path.startswith(prefix + "/"):
+        rewritten = path[len(prefix) :] or "/"
+        request.scope["path"] = rewritten
+        request.scope["raw_path"] = rewritten.encode("utf-8")
+    return await call_next(request)
+
+
 def _static_file_response(path: Path, media_type: str) -> FileResponse:
     if not path.exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"{path.name} not found")
@@ -278,13 +291,37 @@ def _validate_csrf_token(request: Request, csrf_token: str | None) -> None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid CSRF token.")
 
 
-def require_auth(request: Request) -> bool:
+def _is_basic_auth_valid(authorization: str | None) -> bool:
+    if not authorization:
+        return False
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "basic" or not token:
+        return False
+    try:
+        decoded = base64.b64decode(token, validate=True).decode("utf-8")
+    except Exception:
+        return False
+    username, sep, password = decoded.partition(":")
+    if not sep:
+        return False
+    return _credentials_valid(username, password)
+
+
+def require_auth(request: Request, authorization: str | None = Header(default=None, alias="Authorization")) -> bool:
     if not _is_authenticated(request):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+        if not _is_basic_auth_valid(authorization):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
     return True
 
 
-def require_csrf(request: Request, csrf_header: str | None = Header(default=None, alias="X-CSRF-Token")) -> bool:
+def require_csrf(
+    request: Request,
+    csrf_header: str | None = Header(default=None, alias="X-CSRF-Token"),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> bool:
+    if _is_basic_auth_valid(authorization):
+        # Non-cookie API auth does not rely on browser sessions, so CSRF is not applicable.
+        return True
     _require_same_origin(request)
     _validate_csrf_token(request, csrf_header)
     return True
