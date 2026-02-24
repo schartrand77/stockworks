@@ -86,6 +86,8 @@ STATIC_DIR = BASE_DIR / "static"
 PUBLIC_DIR = BASE_DIR.parent / "public"
 MANIFEST_FILE = STATIC_DIR / "site.webmanifest"
 SERVICE_WORKER_FILE = STATIC_DIR / "sw.js"
+FAVICON_ICO_FILE = PUBLIC_DIR / "favicon.ico"
+FAVICON_PNG_FILE = PUBLIC_DIR / "favicon.png"
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 mimetypes.add_type("application/manifest+json", ".webmanifest")
@@ -173,6 +175,14 @@ def service_worker() -> FileResponse:
 def web_manifest() -> FileResponse:
     """Expose the web manifest at the root for install prompts."""
     return _static_file_response(MANIFEST_FILE, media_type="application/manifest+json")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon() -> FileResponse:
+    """Serve favicon requests expected by browsers."""
+    if FAVICON_ICO_FILE.exists():
+        return _static_file_response(FAVICON_ICO_FILE, media_type="image/x-icon")
+    return _static_file_response(FAVICON_PNG_FILE, media_type="image/png")
 
 
 @app.get("/public/{asset_path:path}", include_in_schema=False)

@@ -42,12 +42,28 @@
       </section>
     </main>
     <script>
-      if ("serviceWorker" in navigator && window.isSecureContext) {
-        navigator.serviceWorker.register("/sw.js").catch((error) => {
-          console.error("Service worker registration (auth shell) failed:", error);
-        });
-      } else if ("serviceWorker" in navigator) {
-        console.warn("Service workers and PWA install prompts require HTTPS (or localhost).");
+      // Keep login outside service-worker control to avoid stale cached auth shells.
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker
+          .getRegistrations()
+          .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())))
+          .catch((error) => {
+            console.warn("Service worker cleanup on login failed:", error);
+          });
+      }
+      if ("caches" in window) {
+        caches
+          .keys()
+          .then((keys) =>
+            Promise.all(
+              keys
+                .filter((key) => key.startsWith("stockworks-shell-"))
+                .map((key) => caches.delete(key)),
+            ),
+          )
+          .catch((error) => {
+            console.warn("Cache cleanup on login failed:", error);
+          });
       }
     </script>
   </body>

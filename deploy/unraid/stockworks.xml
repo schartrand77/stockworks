@@ -24,8 +24,9 @@
   <Config Name="Data Directory" Target="STOCKWORKS_DATA_DIR" Default="/data" Description="Location inside the container that holds the SQLite file" Type="Variable" Display="advanced" Required="true" Mask="false" />
   <Config Name="Database Filename" Target="STOCKWORKS_DB_FILENAME" Default="app.db" Description="SQLite filename stored under STOCKWORKS_DATA_DIR" Type="Variable" Display="advanced" Required="true" Mask="false" />
   <Config Name="Admin Username" Target="ADMIN_USERNAME" Default="admin" Description="Credential required to log into the StockWorks UI" Type="Variable" Display="always" Required="true" Mask="false" />
-  <Config Name="Admin Password" Target="ADMIN_PASSWORD" Default="changeme" Description="Credential required to log into the StockWorks UI" Type="Variable" Display="always" Required="true" Mask="true" />
-  <Config Name="Secret Key" Target="SECRET_KEY" Default="please-change-me" Description="Secret used to sign session cookies" Type="Variable" Display="always" Required="true" Mask="true" />
+  <Config Name="Admin Password" Target="ADMIN_PASSWORD" Default="" Description="Credential required to log into the StockWorks UI (12+ characters)" Type="Variable" Display="always" Required="true" Mask="true" />
+  <Config Name="Secret Key" Target="SECRET_KEY" Default="" Description="Secret used to sign session cookies (32+ characters)" Type="Variable" Display="always" Required="true" Mask="true" />
+  <Config Name="HTTPS-Only Session Cookie" Target="SESSION_HTTPS_ONLY" Default="0" Description="Set to 1 when the app is accessed via HTTPS so login cookies are marked Secure" Type="Variable" Display="advanced" Required="false" Mask="false" />
   <Config Name="OrderWorks Base URL" Target="ORDERWORKS_BASE_URL" Default="" Description="Optional OrderWorks dashboard URL used for \"Open\" links" Type="Variable" Display="advanced" Required="false" Mask="false" />
   <Config Name="Bambu View Base URL" Target="BAMBU_VIEW_BASE_URL" Default="" Description="Optional Bambu View URL used to read loaded AMS trays" Type="Variable" Display="advanced" Required="false" Mask="false" />
   <Config Name="Bambu View API Key" Target="BAMBU_VIEW_API_KEY" Default="" Description="Optional API key for Bambu View API access" Type="Variable" Display="advanced" Required="false" Mask="true" />
