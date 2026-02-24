@@ -1,4 +1,4 @@
-const CACHE_NAME = "stockworks-shell-v8";
+const CACHE_NAME = "stockworks-shell-v9";
 const CORE_ASSETS = [
   "/login",
   "/static/styles.css",
@@ -66,14 +66,13 @@ function shouldCache(request, url) {
 async function handleNavigation(request) {
   try {
     const response = await fetch(request);
-    const cache = await caches.open(CACHE_NAME);
-    cache.put(request, response.clone());
+    const contentType = (response.headers.get("content-type") || "").toLowerCase();
+    if (response.ok && contentType.includes("text/html")) {
+      const cache = await caches.open(CACHE_NAME);
+      await cache.put(request, response.clone());
+    }
     return response;
   } catch (error) {
-    const cached = await caches.match(request);
-    if (cached) {
-      return cached;
-    }
     const fallback = await caches.match(OFFLINE_FALLBACK);
     if (fallback) {
       return fallback;

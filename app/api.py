@@ -262,7 +262,19 @@ def _ensure_csrf_token(request: Request) -> str:
 
 
 def _same_origin(request: Request) -> bool:
-    expected = f"{request.url.scheme}://{request.url.netloc}"
+    def _normalize_origin(scheme: str, netloc: str) -> str:
+        host, sep, port = netloc.partition(":")
+        if sep and ((scheme.lower() == "https" and port == "443") or (scheme.lower() == "http" and port == "80")):
+            netloc = host
+        return f"{scheme.lower()}://{netloc.lower()}"
+
+    expected_origins = {_normalize_origin(request.url.scheme, request.url.netloc)}
+
+    forwarded_proto = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip()
+    forwarded_host = (request.headers.get("x-forwarded-host") or "").split(",")[0].strip()
+    if forwarded_proto and forwarded_host:
+        expected_origins.add(_normalize_origin(forwarded_proto, forwarded_host))
+
     origin = request.headers.get("origin")
     referer = request.headers.get("referer")
     candidate = origin or referer
@@ -271,7 +283,8 @@ def _same_origin(request: Request) -> bool:
     parsed = urlparse(candidate)
     if not parsed.scheme or not parsed.netloc:
         return False
-    return f"{parsed.scheme}://{parsed.netloc}".lower() == expected.lower()
+    candidate_origin = _normalize_origin(parsed.scheme, parsed.netloc)
+    return candidate_origin in expected_origins
 
 
 def _require_same_origin(request: Request) -> None:
@@ -387,7 +400,11 @@ def root(request: Request):
     """Serve the HTML shell for the single-page UI."""
     if not _is_authenticated(request):
         return RedirectResponse("/login", status_code=status.HTTP_302_FOUND)
-    return templates.TemplateResponse("index.html", {"request": request, "csrf_token": _ensure_csrf_token(request)})
+    return templates.TemplateResponse(
+        "index.html",
+        {"request": request, "csrf_token": _ensure_csrf_token(request)},
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -397,6 +414,7 @@ def login_page(request: Request):
     return templates.TemplateResponse(
         "login.html",
         {"request": request, "error": None, "username": "", "csrf_token": _ensure_csrf_token(request)},
+        headers={"Cache-Control": "no-store"},
     )
 
 
