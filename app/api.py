@@ -18,6 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.middleware.base import BaseHTTPMiddleware
 from sqlalchemy import or_, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import selectinload
@@ -97,6 +98,16 @@ SESSION_COOKIE = "stockworks-session"
 SESSION_MAX_AGE_SECONDS = int(os.environ.get("SESSION_MAX_AGE_SECONDS", "28800"))
 SESSION_SAME_SITE = (os.environ.get("SESSION_SAME_SITE") or "strict").strip().lower()
 SESSION_HTTPS_ONLY = (os.environ.get("SESSION_HTTPS_ONLY") or "1").strip().lower() in {"1", "true", "yes", "on"}
+TRUST_X_FORWARDED_FOR = (os.environ.get("TRUST_X_FORWARDED_FOR") or "0").strip().lower() in {"1", "true", "yes", "on"}
+CORS_ALLOW_ORIGINS = [
+    origin.strip() for origin in (os.environ.get("CORS_ALLOW_ORIGINS") or "").split(",") if origin.strip()
+]
+CORS_ALLOW_CREDENTIALS = (os.environ.get("CORS_ALLOW_CREDENTIALS") or "0").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 CSRF_TOKEN_LENGTH = 48
 LOGIN_RATE_LIMIT_ATTEMPTS = int(os.environ.get("LOGIN_RATE_LIMIT_ATTEMPTS", "5"))
 LOGIN_RATE_LIMIT_WINDOW_SECONDS = int(os.environ.get("LOGIN_RATE_LIMIT_WINDOW_SECONDS", "300"))
@@ -133,18 +144,21 @@ def _validate_security_config() -> None:
         raise RuntimeError("SESSION_SAME_SITE must be one of: lax, strict, none.")
     if SESSION_MAX_AGE_SECONDS < 300:
         raise RuntimeError("SESSION_MAX_AGE_SECONDS must be at least 300.")
+    if CORS_ALLOW_CREDENTIALS and "*" in CORS_ALLOW_ORIGINS:
+        raise RuntimeError("CORS_ALLOW_ORIGINS cannot contain '*' when CORS_ALLOW_CREDENTIALS is enabled.")
 
 
 _validate_security_config()
 
 app = FastAPI(title="StockWorks", version="1.0.0")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+if CORS_ALLOW_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=CORS_ALLOW_ORIGINS,
+        allow_credentials=CORS_ALLOW_CREDENTIALS,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-CSRF-Token"],
+    )
 app.add_middleware(
     SessionMiddleware,
     secret_key=SECRET_KEY,
@@ -153,6 +167,21 @@ app.add_middleware(
     https_only=SESSION_HTTPS_ONLY,
     max_age=SESSION_MAX_AGE_SECONDS,
 )
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):  # type: ignore[override]
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "same-origin")
+        response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        if SESSION_HTTPS_ONLY:
+            response.headers.setdefault("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
+        return response
+
+
+app.add_middleware(SecurityHeadersMiddleware)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
@@ -262,10 +291,8 @@ def _credentials_valid(username: str, password: str) -> bool:
 
 
 def _login_rate_limit_key(request: Request, username: str) -> str:
-    forwarded_for = request.headers.get("x-forwarded-for", "")
-    client_ip = (forwarded_for.split(",")[0].strip() if forwarded_for else "") or (
-        request.client.host if request.client else "unknown"
-    )
+    forwarded_for = request.headers.get("x-forwarded-for", "") if TRUST_X_FORWARDED_FOR else ""
+    client_ip = (forwarded_for.split(",")[0].strip() if forwarded_for else "") or (request.client.host if request.client else "unknown")
     return f"{client_ip.lower()}::{username.strip().lower()}"
 
 
