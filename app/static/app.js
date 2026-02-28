@@ -11,6 +11,7 @@ const state = {
   currentHardwareMovementId: null,
   currentModelId: null,
   currentModelSaleId: null,
+  currentModelMovementId: null,
   orderworksJobs: [],
   orderworksError: null,
   orderworksConfigured: true,
@@ -23,6 +24,7 @@ const state = {
   lastInventoryMovements: [],
   lastHardwareMovements: [],
   lastModelSales: [],
+  lastModelMovements: [],
 };
 
 const messageEl = document.getElementById("message");
@@ -162,6 +164,7 @@ const modelFields = {
   file_location: document.getElementById("model-file"),
   version: document.getElementById("model-version"),
   unit_price: document.getElementById("model-price"),
+  quantity_on_hand: document.getElementById("model-quantity"),
   active: document.getElementById("model-active"),
   notes: document.getElementById("model-notes"),
 };
@@ -180,6 +183,13 @@ const modelSaleChannel = document.getElementById("model-sale-channel");
 const modelSaleReference = document.getElementById("model-sale-reference");
 const modelSaleNote = document.getElementById("model-sale-note");
 const modelSaleTableBody = document.querySelector("#model-sale-table tbody");
+const modelMovementForm = document.getElementById("model-movement-form");
+const modelMovementSelect = document.getElementById("model-movement-model");
+const modelMovementType = document.getElementById("model-movement-type");
+const modelMovementChange = document.getElementById("model-movement-change");
+const modelMovementReference = document.getElementById("model-movement-reference");
+const modelMovementNote = document.getElementById("model-movement-note");
+const modelMovementTableBody = document.querySelector("#model-movement-table tbody");
 
 // Movements
 const movementForm = document.getElementById("movement-form");
@@ -614,6 +624,20 @@ function bindEvents() {
     }
   });
   hardwareMovementForm.addEventListener("submit", handleHardwareMovementSubmit);
+  if (modelMovementSelect) {
+    modelMovementSelect.addEventListener("change", () => {
+      const id = Number(modelMovementSelect.value);
+      state.currentModelMovementId = Number.isFinite(id) ? id : null;
+      if (state.currentModelMovementId) {
+        safeAsync(() => loadModelMovements(state.currentModelMovementId));
+      } else {
+        renderModelMovements([]);
+      }
+    });
+  }
+  if (modelMovementForm) {
+    modelMovementForm.addEventListener("submit", handleModelMovementSubmit);
+  }
   if (modelSaleSelect) {
     modelSaleSelect.addEventListener("change", () => {
       const id = Number(modelSaleSelect.value);
@@ -885,6 +909,16 @@ async function loadModels({ suppressReports = false } = {}) {
       modelSaleSelect.value = "";
       state.currentModelSaleId = null;
       renderModelSales([]);
+    }
+  }
+  if (state.currentModelMovementId) {
+    const stillExists = models.some((model) => model.id === state.currentModelMovementId);
+    if (stillExists) {
+      await loadModelMovements(state.currentModelMovementId, { suppressReports: true });
+    } else if (modelMovementSelect) {
+      modelMovementSelect.value = "";
+      state.currentModelMovementId = null;
+      renderModelMovements([]);
     }
   }
   if (!suppressReports) {
@@ -1400,11 +1434,11 @@ function renderModels() {
     nextBtn: modelsNextBtn,
   });
   if (!state.models.length) {
-    modelsTableBody.innerHTML = `<tr><td colspan="8" class="muted">No models tracked yet.</td></tr>`;
+    modelsTableBody.innerHTML = `<tr><td colspan="9" class="muted">No models tracked yet.</td></tr>`;
     return;
   }
   if (!filtered.length) {
-    modelsTableBody.innerHTML = `<tr><td colspan="8" class="muted">No matches for the current search or filter.</td></tr>`;
+    modelsTableBody.innerHTML = `<tr><td colspan="9" class="muted">No matches for the current search or filter.</td></tr>`;
     return;
   }
   modelsTableBody.innerHTML = items
@@ -1416,11 +1450,13 @@ function renderModels() {
           <td>${escapeHtml(model.category || "")}</td>
           <td>${escapeHtml(model.sku || "")}</td>
           <td>${formatCurrency(model.unit_price || 0)}</td>
+          <td>${Number(model.quantity_on_hand || 0).toFixed(2)}</td>
           <td>${status}</td>
           <td>${formatQuantity(model.total_sold || 0)}</td>
           <td>${formatCurrency(model.total_revenue || 0)}</td>
           <td>
             <button class="small-button" data-action="edit" data-id="${model.id}">Edit</button>
+            <button class="small-button" data-action="move" data-id="${model.id}">Move</button>
             <button class="small-button danger" data-action="delete" data-id="${model.id}">Delete</button>
           </td>
         </tr>`;
@@ -2162,7 +2198,7 @@ function populateHardwareOptions() {
 }
 
 function populateModelOptions() {
-  if (!modelSaleSelect) {
+  if (!modelSaleSelect && !modelMovementSelect) {
     return;
   }
   const options = state.models
@@ -2171,10 +2207,19 @@ function populateModelOptions() {
       return `<option value="${model.id}">${escapeHtml(label)}</option>`;
     })
     .join("");
-  const currentValue = modelSaleSelect.value;
-  modelSaleSelect.innerHTML = `<option value="">Select model...</option>${options}`;
-  if (options && currentValue && state.models.some((model) => String(model.id) === currentValue)) {
-    modelSaleSelect.value = currentValue;
+  if (modelSaleSelect) {
+    const currentValue = modelSaleSelect.value;
+    modelSaleSelect.innerHTML = `<option value="">Select model...</option>${options}`;
+    if (options && currentValue && state.models.some((model) => String(model.id) === currentValue)) {
+      modelSaleSelect.value = currentValue;
+    }
+  }
+  if (modelMovementSelect) {
+    const currentValue = modelMovementSelect.value;
+    modelMovementSelect.innerHTML = `<option value="">Select model...</option>${options}`;
+    if (options && currentValue && state.models.some((model) => String(model.id) === currentValue)) {
+      modelMovementSelect.value = currentValue;
+    }
   }
 }
 
@@ -2293,7 +2338,48 @@ async function handleModelSaleSubmit(event) {
     modelSaleNote.value = "";
     await loadModels();
     await loadModelSales(modelId);
+    if (state.currentModelMovementId === modelId || modelMovementSelect?.value === String(modelId)) {
+      await loadModelMovements(modelId);
+    }
     showToast("Model sale logged.", "success");
+  } catch (error) {
+    console.error(error);
+    setMessage(error.message, "error");
+  }
+}
+
+async function handleModelMovementSubmit(event) {
+  event.preventDefault();
+  try {
+    const modelId = Number(modelMovementSelect.value);
+    if (!Number.isFinite(modelId)) {
+      setMessage("Select a model first.", "error");
+      return;
+    }
+    let change = Number(modelMovementChange.value);
+    if (!Number.isFinite(change) || change === 0) {
+      setMessage("Change value must be non-zero.", "error");
+      return;
+    }
+    if (modelMovementType.value === "incoming") {
+      change = Math.abs(change);
+    } else if (modelMovementType.value === "outgoing") {
+      change = -Math.abs(change);
+    }
+    const payload = {
+      model_id: modelId,
+      movement_type: modelMovementType.value,
+      change_units: change,
+      reference: optionalString(modelMovementReference.value),
+      note: optionalString(modelMovementNote.value),
+    };
+    await api("/models/movements", { method: "POST", body: payload });
+    modelMovementChange.value = "";
+    modelMovementReference.value = "";
+    modelMovementNote.value = "";
+    await loadModels();
+    await loadModelMovements(modelId);
+    showToast("Model movement logged.", "success");
   } catch (error) {
     console.error(error);
     setMessage(error.message, "error");
@@ -2381,6 +2467,8 @@ function handleModelRowClick(event) {
   const id = Number(button.dataset.id);
   if (button.dataset.action === "edit") {
     startModelEdit(id);
+  } else if (button.dataset.action === "move") {
+    startModelMovementEntry(id);
   } else if (button.dataset.action === "delete") {
     deleteModel(id);
   }
@@ -2501,12 +2589,30 @@ function startModelEdit(id) {
   modelFields.file_location.value = model.file_location || "";
   modelFields.version.value = model.version || "";
   modelFields.unit_price.value = model.unit_price ?? "";
+  modelFields.quantity_on_hand.value = model.quantity_on_hand ?? 0;
   modelFields.active.value = model.active ? "true" : "false";
   modelFields.notes.value = model.notes || "";
+  if (modelMovementSelect) {
+    modelMovementSelect.value = String(id);
+    state.currentModelMovementId = id;
+    safeAsync(() => loadModelMovements(id));
+  }
   if (modelSaleSelect) {
     modelSaleSelect.value = String(id);
     state.currentModelSaleId = id;
     safeAsync(() => loadModelSales(id));
+  }
+}
+
+function startModelMovementEntry(id) {
+  const model = state.models.find((item) => item.id === id);
+  if (!model || !modelMovementSelect) return;
+  modelMovementSelect.value = String(id);
+  state.currentModelMovementId = id;
+  safeAsync(() => loadModelMovements(id));
+  if (modelMovementChange) {
+    modelMovementChange.focus();
+    modelMovementChange.select();
   }
 }
 
@@ -2720,8 +2826,14 @@ function buildModelPayload() {
   }
   const priceValue = modelFields.unit_price.value;
   const unitPrice = priceValue.trim() === "" ? 0 : Number(priceValue);
+  const quantityValue = modelFields.quantity_on_hand.value;
+  const quantityOnHand = quantityValue.trim() === "" ? 0 : Number(quantityValue);
   if (!Number.isFinite(unitPrice) || unitPrice < 0) {
     setMessage("Unit price must be a positive number.", "error");
+    return null;
+  }
+  if (!Number.isFinite(quantityOnHand) || quantityOnHand < 0) {
+    setMessage("Quantity on hand must be zero or greater.", "error");
     return null;
   }
   return {
@@ -2733,6 +2845,7 @@ function buildModelPayload() {
     file_location: optionalString(modelFields.file_location.value),
     version: optionalString(modelFields.version.value),
     unit_price: unitPrice,
+    quantity_on_hand: quantityOnHand,
     active: modelFields.active.value === "true",
     notes: optionalString(modelFields.notes.value),
   };
@@ -2790,12 +2903,24 @@ function resetModelForm() {
   modelForm.reset();
   modelIdInput.value = "";
   state.currentModelId = null;
+  if (modelFields.quantity_on_hand) {
+    modelFields.quantity_on_hand.value = "0";
+  }
 }
 
 async function loadModelSales(modelId, { suppressReports = false } = {}) {
   const sales = await api(`/models/${modelId}/sales`);
   state.lastModelSales = Array.isArray(sales) ? sales : [];
   renderModelSales(sales);
+  if (!suppressReports) {
+    renderReports();
+  }
+}
+
+async function loadModelMovements(modelId, { suppressReports = false } = {}) {
+  const movements = await api(`/models/${modelId}/movements`);
+  state.lastModelMovements = Array.isArray(movements) ? movements : [];
+  renderModelMovements(movements);
   if (!suppressReports) {
     renderReports();
   }
@@ -2835,6 +2960,31 @@ function renderModelSales(sales) {
           <td>${escapeHtml(sale.note || "")}</td>
         </tr>`;
     })
+    .join("");
+}
+
+function renderModelMovements(movements) {
+  if (!modelMovementTableBody) {
+    return;
+  }
+  if (!movements.length) {
+    const text = state.currentModelMovementId
+      ? "No model movements recorded."
+      : "Select a model to view movement history.";
+    modelMovementTableBody.innerHTML = `<tr><td colspan="5" class="muted">${text}</td></tr>`;
+    return;
+  }
+  modelMovementTableBody.innerHTML = movements
+    .map(
+      (movement) => `
+        <tr>
+          <td>${new Date(movement.created_at).toLocaleString()}</td>
+          <td>${escapeHtml(movement.movement_type)}</td>
+          <td>${Number(movement.change_units).toFixed(2)}</td>
+          <td>${escapeHtml(movement.reference || "")}</td>
+          <td>${escapeHtml(movement.note || "")}</td>
+        </tr>`
+    )
     .join("");
 }
 

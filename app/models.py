@@ -239,13 +239,16 @@ class PrintModelBase(SQLModel):
     file_location: Optional[str] = Field(default=None, description="Path or URL to model file")
     version: Optional[str] = Field(default=None, description="Model version or revision")
     unit_price: float = Field(default=0, ge=0, description="Default sale price per unit")
+    quantity_on_hand: float = Field(default=0, ge=0, description="Current number of finished units in stock")
     active: bool = Field(default=True)
     notes: Optional[str] = None
 
 
 class PrintModel(PrintModelBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
+    makerworks_product_template_id: Optional[str] = Field(default=None, index=True)
     sales: List["PrintModelSale"] = Relationship(back_populates="model")
+    movements: List["PrintModelMovement"] = Relationship(back_populates="model")
 
 
 class PrintModelCreate(PrintModelBase):
@@ -261,12 +264,14 @@ class PrintModelUpdate(SQLModel):
     file_location: Optional[str] = None
     version: Optional[str] = None
     unit_price: Optional[float] = Field(default=None, ge=0)
+    quantity_on_hand: Optional[float] = Field(default=None, ge=0)
     active: Optional[bool] = None
     notes: Optional[str] = None
 
 
 class PrintModelRead(PrintModelBase):
     id: int
+    makerworks_product_template_id: Optional[str] = None
     total_sold: int = 0
     total_revenue: float = 0
 
@@ -296,6 +301,31 @@ class PrintModelSaleRead(PrintModelSaleBase):
     id: int
     model_id: int
     sold_at: datetime
+
+
+class PrintModelMovementBase(SQLModel):
+    movement_type: str = Field(description="incoming, outgoing, adjustment, or sale")
+    change_units: float = Field(description="Positive for inbound, negative for outbound")
+    reference: Optional[str] = Field(default=None, description="PO, job, or order reference")
+    note: Optional[str] = None
+
+
+class PrintModelMovement(PrintModelMovementBase, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    model_id: int = Field(foreign_key="printmodel.id", index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+
+    model: Optional[PrintModel] = Relationship(back_populates="movements")
+
+
+class PrintModelMovementCreate(PrintModelMovementBase):
+    model_id: int
+
+
+class PrintModelMovementRead(PrintModelMovementBase):
+    id: int
+    model_id: int
+    created_at: datetime
 
 
 class PaginatedMaterialsRead(SQLModel):

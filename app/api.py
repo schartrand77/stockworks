@@ -74,6 +74,9 @@ from .models import (
     PrintModel,
     PrintModelCreate,
     PrintModelRead,
+    PrintModelMovement,
+    PrintModelMovementCreate,
+    PrintModelMovementRead,
     PrintModelSale,
     PrintModelSaleCreate,
     PrintModelSaleRead,
@@ -198,7 +201,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Referrer-Policy", "same-origin")
-        response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        response.headers.setdefault("Permissions-Policy", "camera=(self), microphone=(), geolocation=()")
         if SESSION_HTTPS_ONLY:
             response.headers.setdefault("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
         return response
@@ -1044,6 +1047,8 @@ def update_print_model(
     for key, value in update_data.items():
         setattr(model, key, value)
     session.add(model)
+    session.flush()
+    _sync_model_to_makerworks_product_template(session, model)
     session.commit()
     session.refresh(model)
     return _model_read_with_totals(session, model)
@@ -1062,9 +1067,45 @@ def delete_print_model(
     sales = session.exec(select(PrintModelSale).where(PrintModelSale.model_id == model_id)).all()
     for sale in sales:
         session.delete(sale)
+    movements = session.exec(select(PrintModelMovement).where(PrintModelMovement.model_id == model_id)).all()
+    for movement in movements:
+        session.delete(movement)
     session.delete(model)
     session.commit()
     return None
+
+
+@app.post("/models/movements", response_model=PrintModelMovementRead, status_code=status.HTTP_201_CREATED)
+def create_print_model_movement(
+    payload: PrintModelMovementCreate,
+    session: Session = Depends(get_session),
+    _: bool = Depends(require_auth),
+    _csrf: bool = Depends(require_csrf),
+):
+    model = session.get(PrintModel, payload.model_id)
+    if not model:
+        raise HTTPException(status_code=404, detail="Model not found")
+    new_qty = float(model.quantity_on_hand or 0) + payload.change_units
+    if new_qty < 0:
+        raise HTTPException(status_code=400, detail="Movement would reduce model stock below zero")
+    model.quantity_on_hand = new_qty
+    movement = PrintModelMovement.from_orm(payload)
+    session.add(model)
+    session.add(movement)
+    session.flush()
+    _sync_model_to_makerworks_product_template(session, model)
+    session.commit()
+    session.refresh(movement)
+    return movement
+
+
+@app.get("/models/{model_id}/movements", response_model=List[PrintModelMovementRead])
+def list_print_model_movements(model_id: int, session: Session = Depends(get_session), _: bool = Depends(require_auth)):
+    _ensure_model_exists(session, model_id)
+    statement = select(PrintModelMovement).where(PrintModelMovement.model_id == model_id).order_by(
+        PrintModelMovement.created_at.desc()
+    )
+    return session.exec(statement).all()
 
 
 @app.post("/models/sales", response_model=PrintModelSaleRead, status_code=status.HTTP_201_CREATED)
@@ -1074,9 +1115,26 @@ def create_print_model_sale(
     _: bool = Depends(require_auth),
     _csrf: bool = Depends(require_csrf),
 ):
-    _ensure_model_exists(session, payload.model_id)
+    model = session.get(PrintModel, payload.model_id)
+    if not model:
+        raise HTTPException(status_code=404, detail="Model not found")
+    new_qty = float(model.quantity_on_hand or 0) - payload.quantity
+    if new_qty < 0:
+        raise HTTPException(status_code=400, detail="Sale would reduce model stock below zero")
     sale = PrintModelSale.from_orm(payload)
+    movement = PrintModelMovement(
+        model_id=payload.model_id,
+        movement_type="sale",
+        change_units=-float(payload.quantity),
+        reference=payload.reference,
+        note=payload.note or payload.channel,
+    )
+    model.quantity_on_hand = new_qty
+    session.add(model)
     session.add(sale)
+    session.add(movement)
+    session.flush()
+    _sync_model_to_makerworks_product_template(session, model)
     session.commit()
     session.refresh(sale)
     return sale
@@ -1585,6 +1643,35 @@ def _sync_model_to_makerworks_product_template(session: Session, model: PrintMod
     description = (model.notes or "").strip() or (model.category or "").strip() or None
     now = datetime.utcnow()
     available_columns = _fetch_table_columns(conn, "public", "ProductTemplate")
+    id_column = _find_matching_column(available_columns, ["id"])
+    title_column = _find_matching_column(available_columns, ["title", "name"])
+    description_column = _find_matching_column(available_columns, ["description", "details"])
+    active_column = _find_matching_column(available_columns, ["isActive", "active", "enabled"])
+    stockworks_link_column = _find_matching_column(
+        available_columns,
+        ["stockworksInventoryItemId", "stockworks_inventory_item_id"],
+    )
+    quantity_column = _find_matching_column(
+        available_columns,
+        [
+            "quantityOnHand",
+            "stockOnHand",
+            "inventoryQuantity",
+            "inventoryCount",
+            "availableQuantity",
+            "onHand",
+            "stock",
+        ],
+    )
+    in_stock_column = _find_matching_column(
+        available_columns,
+        ["isInStock", "inStock", "available", "isAvailable", "in_stock"],
+    )
+    sold_out_column = _find_matching_column(available_columns, ["isSoldOut", "soldOut", "outOfStock", "sold_out"])
+    stock_status_column = _find_matching_column(
+        available_columns,
+        ["stockStatus", "availability", "inventoryStatus", "stock_status"],
+    )
     type_column = _find_matching_column(
         available_columns,
         [
@@ -1611,75 +1698,121 @@ def _sync_model_to_makerworks_product_template(session: Session, model: PrintMod
             "is_merchandise",
         ],
     )
-    existing = conn.execute(
-        text(
-            """
-            SELECT "id"
-            FROM public."ProductTemplate"
-            WHERE "stockworksInventoryItemId" = :model_id
-            LIMIT 1
-            """
-        ),
-        {"model_id": model.id},
-    ).first()
+    existing = None
+    template_id = (model.makerworks_product_template_id or "").strip()
+    if template_id and id_column:
+        existing = conn.execute(
+            text(
+                f'''
+                SELECT {_quote_identifier(id_column)}
+                FROM public."ProductTemplate"
+                WHERE {_quote_identifier(id_column)} = :product_id
+                LIMIT 1
+                '''
+            ),
+            {"product_id": template_id},
+        ).first()
+    if not existing and stockworks_link_column:
+        existing = conn.execute(
+            text(
+                f'''
+                SELECT {_quote_identifier(id_column or "id")}
+                FROM public."ProductTemplate"
+                WHERE {_quote_identifier(stockworks_link_column)} = :model_id
+                LIMIT 1
+                '''
+            ),
+            {"model_id": model.id},
+        ).first()
 
     target_product_id: str | None = None
     try:
         if existing:
-            conn.execute(
-                text(
-                    """
-                    UPDATE public."ProductTemplate"
-                    SET "title" = :title,
-                        "description" = :description,
-                        "isActive" = :is_active,
-                        "updatedAt" = :updated_at
-                    WHERE "id" = :product_id
-                    """
-                ),
-                {
-                    "title": model.name,
-                    "description": description,
-                    "is_active": bool(model.active),
-                    "updated_at": now,
-                    "product_id": existing[0],
-                },
-            )
             target_product_id = str(existing[0])
         else:
             target_product_id = f"stockworks-model-{model.id}"
-
+            insert_columns = []
+            insert_values = []
+            insert_params: dict[str, Any] = {}
+            if id_column:
+                insert_columns.append(id_column)
+                insert_values.append(":id")
+                insert_params["id"] = target_product_id
+            if title_column:
+                insert_columns.append(title_column)
+                insert_values.append(":title")
+                insert_params["title"] = model.name
+            if description_column:
+                insert_columns.append(description_column)
+                insert_values.append(":description")
+                insert_params["description"] = description
+            if active_column:
+                insert_columns.append(active_column)
+                insert_values.append(":is_active")
+                insert_params["is_active"] = bool(model.active)
+            if stockworks_link_column:
+                insert_columns.append(stockworks_link_column)
+                insert_values.append(":stockworks_inventory_item_id")
+                insert_params["stockworks_inventory_item_id"] = model.id
+            created_at_column = _find_matching_column(available_columns, ["createdAt", "created_at"])
+            updated_at_column = _find_matching_column(available_columns, ["updatedAt", "updated_at"])
+            if created_at_column:
+                insert_columns.append(created_at_column)
+                insert_values.append(":created_at")
+                insert_params["created_at"] = now
+            if updated_at_column:
+                insert_columns.append(updated_at_column)
+                insert_values.append(":updated_at")
+                insert_params["updated_at"] = now
             conn.execute(
                 text(
-                    """
-                    INSERT INTO public."ProductTemplate" (
-                        "id",
-                        "title",
-                        "description",
-                        "isActive",
-                        "createdAt",
-                        "updatedAt",
-                        "stockworksInventoryItemId"
-                    ) VALUES (
-                        :id,
-                        :title,
-                        :description,
-                        :is_active,
-                        :created_at,
-                        :updated_at,
-                        :stockworks_inventory_item_id
-                    )
-                    """
+                    f'INSERT INTO public."ProductTemplate" ('
+                    f'{", ".join(_quote_identifier(col) for col in insert_columns)}'
+                    f') VALUES ({", ".join(insert_values)})'
                 ),
-                {
-                    "id": target_product_id,
-                    "title": model.name,
-                    "description": description,
-                    "is_active": bool(model.active),
-                    "created_at": now,
-                    "updated_at": now,
-                    "stockworks_inventory_item_id": model.id,
-                },
+                insert_params,
+            )
+        model.makerworks_product_template_id = target_product_id
+        session.add(model)
+        set_parts: list[str] = []
+        params: dict[str, Any] = {"product_id": target_product_id}
+        if title_column:
+            set_parts.append(f'{_quote_identifier(title_column)} = :title')
+            params["title"] = model.name
+        if description_column:
+            set_parts.append(f'{_quote_identifier(description_column)} = :description')
+            params["description"] = description
+        if active_column:
+            set_parts.append(f'{_quote_identifier(active_column)} = :is_active')
+            params["is_active"] = bool(model.active)
+        if stockworks_link_column:
+            set_parts.append(f'{_quote_identifier(stockworks_link_column)} = :stockworks_inventory_item_id')
+            params["stockworks_inventory_item_id"] = model.id
+        if quantity_column:
+            set_parts.append(f'{_quote_identifier(quantity_column)} = :quantity_on_hand')
+            params["quantity_on_hand"] = float(model.quantity_on_hand or 0)
+        has_stock = float(model.quantity_on_hand or 0) > 0
+        if in_stock_column:
+            set_parts.append(f'{_quote_identifier(in_stock_column)} = :is_in_stock')
+            params["is_in_stock"] = has_stock
+        if sold_out_column:
+            set_parts.append(f'{_quote_identifier(sold_out_column)} = :is_sold_out')
+            params["is_sold_out"] = not has_stock
+        if stock_status_column:
+            set_parts.append(f'{_quote_identifier(stock_status_column)} = :stock_status')
+            params["stock_status"] = "in_stock" if has_stock else "sold_out"
+        updated_at_column = _find_matching_column(available_columns, ["updatedAt", "updated_at"])
+        if updated_at_column:
+            set_parts.append(f'{_quote_identifier(updated_at_column)} = :updated_at')
+            params["updated_at"] = now
+        if set_parts and id_column:
+            conn.execute(
+                text(
+                    f'UPDATE public."ProductTemplate" '
+                    f'SET {", ".join(set_parts)} '
+                    f'WHERE {_quote_identifier(id_column)} = :product_id'
+                ),
+                params,
             )
         _set_makerworks_product_template_classification(
             conn,

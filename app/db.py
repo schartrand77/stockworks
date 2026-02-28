@@ -98,6 +98,7 @@ def init_db() -> None:
     _ensure_performance_indexes()
     _ensure_material_columns()
     _ensure_hardware_columns()
+    _ensure_print_model_columns()
     _DB_READY = True
 
 
@@ -191,6 +192,28 @@ def _ensure_hardware_columns() -> None:
                 conn.exec_driver_sql(f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS {column} {ddl}")
 
 
+def _ensure_print_model_columns() -> None:
+    desired_columns = {
+        "quantity_on_hand": "FLOAT DEFAULT 0",
+        "makerworks_product_template_id": "TEXT",
+    }
+    backend = engine.url.get_backend_name()
+    with engine.begin() as conn:
+        if backend == "sqlite":
+            pragma_rows = conn.exec_driver_sql("PRAGMA table_info(printmodel)").fetchall()
+            existing_columns = {row[1] for row in pragma_rows}
+            for column, ddl in desired_columns.items():
+                if column not in existing_columns:
+                    conn.exec_driver_sql(f"ALTER TABLE printmodel ADD COLUMN {column} {ddl}")
+            return
+        if backend.startswith("postgres"):
+            schema = (DB_SCHEMA or "public").strip() or "public"
+            quoted_schema = engine.dialect.identifier_preparer.quote(schema)
+            table_name = f"{quoted_schema}.printmodel"
+            for column, ddl in desired_columns.items():
+                conn.exec_driver_sql(f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS {column} {ddl}")
+
+
 def _ensure_sqlite_pragmas() -> None:
     backend = engine.url.get_backend_name()
     if backend != "sqlite":
@@ -210,6 +233,7 @@ def _ensure_performance_indexes() -> None:
             "CREATE INDEX IF NOT EXISTS ix_hardwareitem_category_name ON hardwareitem (category, name)",
             "CREATE INDEX IF NOT EXISTS ix_hardwaremovement_item_created ON hardwaremovement (hardware_item_id, created_at)",
             "CREATE INDEX IF NOT EXISTS ix_printmodelsale_model_sold ON printmodelsale (model_id, sold_at)",
+            "CREATE INDEX IF NOT EXISTS ix_printmodelmovement_model_created ON printmodelmovement (model_id, created_at)",
         ]
         with engine.begin() as conn:
             for statement in statements:
@@ -226,6 +250,7 @@ def _ensure_performance_indexes() -> None:
             f"CREATE INDEX IF NOT EXISTS ix_hardwareitem_category_name ON {quoted_schema}.hardwareitem (category, name)",
             f"CREATE INDEX IF NOT EXISTS ix_hardwaremovement_item_created ON {quoted_schema}.hardwaremovement (hardware_item_id, created_at)",
             f"CREATE INDEX IF NOT EXISTS ix_printmodelsale_model_sold ON {quoted_schema}.printmodelsale (model_id, sold_at)",
+            f"CREATE INDEX IF NOT EXISTS ix_printmodelmovement_model_created ON {quoted_schema}.printmodelmovement (model_id, created_at)",
         ]
         with engine.begin() as conn:
             for statement in statements:
