@@ -33,7 +33,7 @@ from .bambu_view import (
     BambuViewNotConfiguredError,
     get_bambu_view_client,
 )
-from .color_resolver import normalize_hex
+from .color_resolver import normalize_hex, normalize_hex_list
 from .db import get_session, init_db
 from .filament_types import bambu_x1c_filament_types
 from .normalization import normalize_barcode, normalize_sku
@@ -497,7 +497,10 @@ def create_material(
     _csrf: bool = Depends(require_csrf),
 ):
     data = payload.dict()
-    data["color_hex"] = normalize_hex(data.get("color_hex"))
+    normalized_hexes = normalize_hex_list(data.get("color_hexes"))
+    primary_hex = normalize_hex(data.get("color_hex"))
+    data["color_hexes"] = normalized_hexes or None
+    data["color_hex"] = primary_hex or (normalized_hexes[0] if normalized_hexes else None)
     data["barcode"] = normalize_barcode(data.get("barcode"))
     data["refill_barcode"] = normalize_barcode(data.get("refill_barcode"))
     data["name"] = _ensure_unique_material_name(session, data["name"])
@@ -571,9 +574,11 @@ def update_material(
     previous_price = material.price_per_gram
     previous_supplier = material.supplier
     update_data = payload.dict(exclude_unset=True)
-    if {"brand", "color", "color_hex"} & update_data.keys():
+    if {"brand", "color", "color_hex", "color_hexes"} & update_data.keys():
+        normalized_hexes = normalize_hex_list(update_data.get("color_hexes", material.color_hexes))
         color_hex = update_data.get("color_hex", material.color_hex)
-        update_data["color_hex"] = normalize_hex(color_hex)
+        update_data["color_hexes"] = normalized_hexes or None
+        update_data["color_hex"] = normalize_hex(color_hex) or (normalized_hexes[0] if normalized_hexes else None)
     if "barcode" in update_data:
         update_data["barcode"] = normalize_barcode(update_data.get("barcode"))
     if "refill_barcode" in update_data:

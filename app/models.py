@@ -2,6 +2,8 @@
 from datetime import datetime
 from typing import List, Optional
 
+from sqlalchemy import Column
+from sqlalchemy.types import JSON
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -12,6 +14,11 @@ class MaterialBase(SQLModel):
     category: Optional[str] = Field(default=None, index=True, description="Finishes like basic, matte, silk, cf, etc.")
     color: str
     color_hex: Optional[str] = Field(default=None, description="Hex code for UI color swatches")
+    color_hexes: Optional[List[str]] = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
+        description="Up to 4 hex colors used to render a segmented color swatch.",
+    )
     supplier: Optional[str] = None
     price_per_gram: float = Field(gt=0, description="Base material cost per gram")
     spool_weight_grams: int = Field(gt=0, description="Total grams per spool")
@@ -37,6 +44,7 @@ class MaterialUpdate(SQLModel):
     category: Optional[str] = None
     color: Optional[str] = None
     color_hex: Optional[str] = None
+    color_hexes: Optional[List[str]] = None
     supplier: Optional[str] = None
     price_per_gram: Optional[float] = Field(default=None, gt=0)
     spool_weight_grams: Optional[int] = Field(default=None, gt=0)

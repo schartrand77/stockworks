@@ -173,10 +173,62 @@
             </label>
             <label>
               Color hex
-              <div class="color-field">
-                <span class="color-dot" id="material-color-dot" aria-hidden="true"></span>
-                <input type="text" id="material-color-hex" placeholder="#1A1A1A" />
-                <input type="color" id="material-color-picker" value="#1A1A1A" aria-label="Pick a color" />
+              <div class="material-color-dropdown" id="material-color-dropdown">
+                <div class="material-gradient-preview">
+                  <span class="color-dot color-dot-large" id="material-color-dot" aria-hidden="true"></span>
+                  <button
+                    type="button"
+                    class="material-color-dropdown-trigger"
+                    id="material-color-dropdown-trigger"
+                    aria-haspopup="true"
+                    aria-expanded="false"
+                  >
+                    <span class="material-color-dropdown-value">
+                      <span class="material-color-square" id="material-color-square" aria-hidden="true"></span>
+                      <span id="material-color-dropdown-label">Choose hex colors</span>
+                    </span>
+                    <span class="material-color-dropdown-caret" aria-hidden="true"></span>
+                  </button>
+                </div>
+                <div class="material-color-dropdown-menu" id="material-color-dropdown-menu" hidden>
+                  <div class="material-color-dropdown-copy muted">
+                    Check another color to turn the swatch into an equal-slice gradient.
+                  </div>
+                  <div class="material-color-slots">
+                  <div class="color-field material-color-slot" data-color-index="0">
+                    <label class="color-slot-toggle always-on">
+                      <input type="checkbox" checked disabled />
+                      <span class="color-slot-label">1</span>
+                    </label>
+                    <input type="text" id="material-color-hex" placeholder="#1A1A1A" />
+                    <input type="color" id="material-color-picker" value="#1A1A1A" aria-label="Pick gradient color 1" />
+                  </div>
+                  <div class="color-field material-color-slot" data-color-index="1">
+                    <label class="color-slot-toggle">
+                      <input type="checkbox" id="material-color-enabled-2" />
+                      <span class="color-slot-label">2</span>
+                    </label>
+                    <input type="text" id="material-color-hex-2" placeholder="#3E6BFF" />
+                    <input type="color" id="material-color-picker-2" value="#3E6BFF" aria-label="Pick gradient color 2" />
+                  </div>
+                  <div class="color-field material-color-slot" data-color-index="2">
+                    <label class="color-slot-toggle">
+                      <input type="checkbox" id="material-color-enabled-3" />
+                      <span class="color-slot-label">3</span>
+                    </label>
+                    <input type="text" id="material-color-hex-3" placeholder="#FFB648" />
+                    <input type="color" id="material-color-picker-3" value="#FFB648" aria-label="Pick gradient color 3" />
+                  </div>
+                  <div class="color-field material-color-slot" data-color-index="3">
+                    <label class="color-slot-toggle">
+                      <input type="checkbox" id="material-color-enabled-4" />
+                      <span class="color-slot-label">4</span>
+                    </label>
+                    <input type="text" id="material-color-hex-4" placeholder="#16A34A" />
+                    <input type="color" id="material-color-picker-4" value="#16A34A" aria-label="Pick gradient color 4" />
+                  </div>
+                </div>
+                </div>
               </div>
             </label>
             <label>

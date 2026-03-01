@@ -136,6 +136,7 @@ def _ensure_material_columns() -> None:
         "barcode": "TEXT",
         "refill_barcode": "TEXT",
         "color_hex": "TEXT",
+        "color_hexes": "TEXT",
     }
     backend = engine.url.get_backend_name()
     with engine.begin() as conn:
