@@ -2189,7 +2189,7 @@ function renderMerch() {
         <tr data-id="${item.id}">
           <td>${escapeHtml(item.name)}</td>
           <td>${escapeHtml(item.category || "")}</td>
-          <td>${escapeHtml(item.merch_color || "")}</td>
+          <td>${item.merch_color ? formatColorChip(item.merch_color, item.merch_color) : ""}</td>
           <td>${escapeHtml(item.merch_size || "")}</td>
           <td>${Number(item.quantity_on_hand || 0).toFixed(2)}</td>
           <td>${Number(item.reorder_level || 0).toFixed(2)}</td>
