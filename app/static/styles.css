@@ -610,12 +610,7 @@ label {
   gap: 0.65rem;
 }
 
-.material-color-square {
-  width: 1rem;
-  height: 1rem;
-  border-radius: 0.2rem;
-  border: 1px solid var(--sap-border-strong);
-  background: var(--swatch-fill, var(--swatch-color, transparent));
+.material-color-master-dot {
   flex: 0 0 auto;
 }
 
@@ -655,6 +650,10 @@ label {
   border-radius: var(--sap-radius-md);
   background: var(--sap-surface);
   box-shadow: 0 18px 45px rgba(0, 0, 0, 0.28);
+}
+
+.material-color-dropdown-menu[hidden] {
+  display: none;
 }
 
 .material-color-dropdown-copy {

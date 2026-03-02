@@ -57,7 +57,6 @@ const materialColorDropdown = document.getElementById("material-color-dropdown")
 const materialColorDropdownTrigger = document.getElementById("material-color-dropdown-trigger");
 const materialColorDropdownMenu = document.getElementById("material-color-dropdown-menu");
 const materialColorDropdownLabel = document.getElementById("material-color-dropdown-label");
-const materialColorSquare = document.getElementById("material-color-square");
 const materialColorSlots = Array.from(document.querySelectorAll(".material-color-slot"));
 const materialColorEnabledInputs = Array.from(document.querySelectorAll(".material-color-slot input[type='checkbox']"));
 const materialColorHexInputs = Array.from(document.querySelectorAll(".material-color-slot input[type='text']"));
@@ -393,6 +392,28 @@ function normalizeHexList(values) {
   return normalized;
 }
 
+function extractHexesFromString(value) {
+  if (!value) {
+    return [];
+  }
+  const matches = String(value).match(/(?:#|0x)?[0-9a-fA-F]{3}(?:[0-9a-fA-F]{3})?\b/g) || [];
+  return normalizeHexList(matches);
+}
+
+function resolveColorHexes(colorHexes = [], ...fallbackValues) {
+  const normalized = normalizeHexList(colorHexes);
+  if (normalized.length) {
+    return normalized;
+  }
+  for (const value of fallbackValues) {
+    const parsed = extractHexesFromString(value);
+    if (parsed.length) {
+      return parsed;
+    }
+  }
+  return [];
+}
+
 function materialGradientHexes() {
   const values = materialColorHexInputs.map((input, index) => {
     const enabled = index === 0 || materialColorEnabledInputs[index]?.checked;
@@ -402,7 +423,7 @@ function materialGradientHexes() {
 }
 
 function materialHexesForDisplay(material) {
-  const gradientHexes = normalizeHexList(material?.color_hexes);
+  const gradientHexes = resolveColorHexes(material?.color_hexes, material?.color_hex);
   if (gradientHexes.length) {
     return gradientHexes;
   }
@@ -436,10 +457,6 @@ function updateMaterialColorPreview() {
   const fill = buildSwatchFill(hexes, materialFields.color.value, materialFields.color_hex.value);
   materialColorDot.style.setProperty("--swatch-fill", fill || "transparent");
   materialColorDot.style.setProperty("--swatch-color", hexes[0] || "transparent");
-  if (materialColorSquare) {
-    materialColorSquare.style.setProperty("--swatch-fill", fill || "transparent");
-    materialColorSquare.style.setProperty("--swatch-color", hexes[0] || "transparent");
-  }
 }
 
 function updateMaterialColorDropdownLabel() {
@@ -459,6 +476,18 @@ function setMaterialColorDropdownOpen(isOpen) {
   materialColorDropdown.classList.toggle("is-open", isOpen);
   materialColorDropdownTrigger.setAttribute("aria-expanded", isOpen ? "true" : "false");
   materialColorDropdownMenu.hidden = !isOpen;
+}
+
+function collapseMaterialColorDropdownAfterInteraction() {
+  window.setTimeout(() => {
+    if (!materialColorDropdown || !materialColorDropdown.classList.contains("is-open")) {
+      return;
+    }
+    const activeElement = document.activeElement;
+    if (!activeElement || !materialColorDropdown.contains(activeElement)) {
+      setMaterialColorDropdownOpen(false);
+    }
+  }, 0);
 }
 
 function syncMaterialColorModeUi() {
@@ -606,13 +635,22 @@ function bindEvents() {
   }
   materialColorHexInputs.forEach((input, index) => {
     input.addEventListener("input", () => syncMaterialColorInputs({ source: "text", index }));
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        setMaterialColorDropdownOpen(false);
+      }
+    });
   });
   materialColorPickers.forEach((input, index) => {
     input.addEventListener("input", () => syncMaterialColorInputs({ source: "picker", index }));
+    input.addEventListener("change", collapseMaterialColorDropdownAfterInteraction);
   });
   materialColorEnabledInputs.forEach((input, index) => {
     if (index === 0) return;
-    input.addEventListener("change", syncMaterialColorModeUi);
+    input.addEventListener("change", () => {
+      syncMaterialColorModeUi();
+      collapseMaterialColorDropdownAfterInteraction();
+    });
   });
   if (materialColorDropdownTrigger) {
     materialColorDropdownTrigger.addEventListener("click", () => {
@@ -623,7 +661,7 @@ function bindEvents() {
   if (materialFields.color) {
     materialFields.color.addEventListener("input", updateMaterialColorPreview);
   }
-  document.addEventListener("click", (event) => {
+  document.addEventListener("pointerdown", (event) => {
     if (!materialColorDropdown || !materialColorDropdown.classList.contains("is-open")) {
       return;
     }
@@ -637,6 +675,9 @@ function bindEvents() {
       setMaterialColorDropdownOpen(false);
     }
   });
+  if (materialColorDropdown) {
+    materialColorDropdown.addEventListener("focusout", collapseMaterialColorDropdownAfterInteraction);
+  }
   materialTableBody.addEventListener("click", handleMaterialRowClick);
   inventoryTableBody.addEventListener("click", handleInventoryRowClick);
   hardwareTableBody.addEventListener("click", handleHardwareRowClick);
@@ -1161,18 +1202,18 @@ async function loadMovements(itemId, { suppressReports = false } = {}) {
 }
 
 function formatColorChip(colorName, colorHex, colorHexes = []) {
-  const normalizedHexes = normalizeHexList(colorHexes);
-  const hex = normalizeHexValue(colorHex);
+  const normalizedHexes = resolveColorHexes(colorHexes, colorHex, colorName);
+  const hex = normalizeHexValue(colorHex) || normalizedHexes[0] || "";
   const hexLabelValue = normalizedHexes.length > 1 ? normalizedHexes.join(" / ") : hex;
   const swatchFill = buildSwatchFill(normalizedHexes, colorName, colorHex);
-  const nameLabel = colorName ? escapeHtml(colorName) : `<span class="muted">Unknown</span>`;
+  const nameLabel = colorName ? `<span>${escapeHtml(colorName)}</span>` : "";
   const hexLabel = hexLabelValue
     ? `<span class="color-hex">${escapeHtml(hexLabelValue)}</span>`
     : `<span class="color-hex muted">No hex</span>`;
   const dot = `<span class="color-dot" style="--swatch-fill: ${swatchFill}; --swatch-color: ${
     normalizedHexes[0] || hex || "transparent"
   }" aria-hidden="true"></span>`;
-  return `<span class="color-chip">${dot}<span>${nameLabel}</span>${hexLabel}</span>`;
+  return `<span class="color-chip">${dot}${nameLabel}${hexLabel}</span>`;
 }
 
 function formatMaterialLabel(material) {
@@ -2229,11 +2270,9 @@ function renderBambuView() {
     for (const tray of loaded) {
       const position =
         Number.isFinite(Number(tray.unit)) && Number.isFinite(Number(tray.slot)) ? `U${tray.unit} S${tray.slot}` : "-";
-      const colorHex = normalizeHexValue(tray.color);
-      const colorLabel = colorHex
-        ? `<span class="color-chip"><span class="color-dot" style="--swatch-color: ${colorHex}" aria-hidden="true"></span><span>${escapeHtml(
-            colorHex
-          )}</span></span>`
+      const trayHexes = resolveColorHexes(tray.colors, tray.color);
+      const colorLabel = trayHexes.length
+        ? formatColorChip("", tray.color, trayHexes)
         : `<span class="muted">-</span>`;
       rows.push(`
         <tr>

@@ -174,22 +174,19 @@
             <label>
               Color hex
               <div class="material-color-dropdown" id="material-color-dropdown">
-                <div class="material-gradient-preview">
-                  <span class="color-dot color-dot-large" id="material-color-dot" aria-hidden="true"></span>
-                  <button
-                    type="button"
-                    class="material-color-dropdown-trigger"
-                    id="material-color-dropdown-trigger"
-                    aria-haspopup="true"
-                    aria-expanded="false"
-                  >
-                    <span class="material-color-dropdown-value">
-                      <span class="material-color-square" id="material-color-square" aria-hidden="true"></span>
-                      <span id="material-color-dropdown-label">Choose hex colors</span>
-                    </span>
-                    <span class="material-color-dropdown-caret" aria-hidden="true"></span>
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  class="material-color-dropdown-trigger"
+                  id="material-color-dropdown-trigger"
+                  aria-haspopup="true"
+                  aria-expanded="false"
+                >
+                  <span class="material-color-dropdown-value">
+                    <span class="color-dot color-dot-large material-color-master-dot" id="material-color-dot" aria-hidden="true"></span>
+                    <span id="material-color-dropdown-label">Choose hex colors</span>
+                  </span>
+                  <span class="material-color-dropdown-caret" aria-hidden="true"></span>
+                </button>
                 <div class="material-color-dropdown-menu" id="material-color-dropdown-menu" hidden>
                   <div class="material-color-dropdown-copy muted">
                     Check another color to turn the swatch into an equal-slice gradient.

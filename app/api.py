@@ -1367,11 +1367,23 @@ def _is_loaded_tray(tray: object) -> bool:
 
 def _normalize_loaded_tray(tray: object) -> dict[str, object]:
     if not isinstance(tray, dict):
-        return {"id": "", "unit": None, "slot": None, "material": "", "name": "", "color": "", "state": ""}
+        return {
+            "id": "",
+            "unit": None,
+            "slot": None,
+            "material": "",
+            "name": "",
+            "color": "",
+            "colors": [],
+            "state": "",
+        }
     color_value = _first_non_empty_str(
         tray.get("color"),
         tray.get("tray_color"),
     )
+    color_values: list[str] = []
+    if color_value:
+        color_values.append(color_value)
     if not color_value:
         cols = tray.get("cols")
         if isinstance(cols, list):
@@ -1379,6 +1391,12 @@ def _normalize_loaded_tray(tray: object) -> dict[str, object]:
                 if isinstance(item, str) and item.strip():
                     color_value = item.strip()
                     break
+    cols = tray.get("cols")
+    if isinstance(cols, list):
+        color_values.extend(item.strip() for item in cols if isinstance(item, str) and item.strip())
+    normalized_colors = normalize_hex_list(color_values)
+    if not color_value and normalized_colors:
+        color_value = normalized_colors[0]
     tray_id = _first_non_empty_str(
         tray.get("id"),
         tray.get("tray_id"),
@@ -1400,6 +1418,7 @@ def _normalize_loaded_tray(tray: object) -> dict[str, object]:
             tray.get("filament_name"),
         ),
         "color": color_value,
+        "colors": normalized_colors,
         "state": _first_non_empty_str(
             tray.get("state"),
             tray.get("tray_state"),
@@ -1439,6 +1458,7 @@ def _normalize_spool_tray(spool: dict[str, Any], fallback_slot: int) -> dict[str
         "material": material,
         "name": name,
         "color": _first_non_empty_str(spool.get("color")),
+        "colors": normalize_hex_list([_first_non_empty_str(spool.get("color"))]),
         "state": state,
     }
 
