@@ -1,7 +1,9 @@
 """SQLModel models for the StockWorks domain."""
+import json
 from datetime import datetime
 from typing import List, Optional
 
+from pydantic import field_validator
 from sqlalchemy import Column
 from sqlalchemy.types import JSON
 from sqlmodel import Field, Relationship, SQLModel
@@ -55,6 +57,21 @@ class MaterialUpdate(SQLModel):
 
 class MaterialRead(MaterialBase):
     id: int
+    color_hexes: List[str] = Field(default_factory=list)
+
+    @field_validator("color_hexes", mode="before")
+    @classmethod
+    def normalize_color_hexes(cls, value):
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped or stripped.lower() == "null":
+                return []
+            try:
+                parsed = json.loads(stripped)
+            except json.JSONDecodeError:
+                return []
+            return parsed if isinstance(parsed, list) else []
+        return value or []
 
 
 class MaterialCostHistoryBase(SQLModel):

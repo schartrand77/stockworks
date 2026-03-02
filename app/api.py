@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import mimetypes
 import logging
 import os
@@ -517,7 +518,7 @@ def create_material(
     )
     session.add(history)
     session.commit()
-    return material
+    return _material_to_read(material)
 
 
 @app.get("/materials", response_model=PaginatedMaterialsRead)
@@ -549,7 +550,12 @@ def list_materials(
         total_statement = total_statement.where(*filters)
     materials = session.exec(statement).all()
     total = session.exec(total_statement).one()
-    return PaginatedMaterialsRead(items=materials, total=total, limit=limit, offset=offset)
+    return PaginatedMaterialsRead(
+        items=[_material_to_read(material) for material in materials],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @app.get("/materials/{material_id}", response_model=MaterialRead)
@@ -557,7 +563,7 @@ def get_material(material_id: int, session: Session = Depends(get_session), _: b
     material = session.get(Material, material_id)
     if not material:
         raise HTTPException(status_code=404, detail="Material not found")
-    return material
+    return _material_to_read(material)
 
 
 @app.put("/materials/{material_id}", response_model=MaterialRead)
@@ -598,7 +604,7 @@ def update_material(
         )
         session.add(history)
         session.commit()
-    return material
+    return _material_to_read(material)
 
 
 @app.get("/materials/{material_id}/cost-history", response_model=List[MaterialCostHistoryRead])
@@ -1554,6 +1560,40 @@ def _delete_material_dependencies(session: Session, material_id: int) -> None:
     ).all()
     for entry in cost_history_entries:
         session.delete(entry)
+
+
+def _material_to_read(material: Material) -> MaterialRead:
+    raw_hexes = material.color_hexes
+    if isinstance(raw_hexes, list):
+        color_hexes = raw_hexes
+    elif isinstance(raw_hexes, str):
+        stripped = raw_hexes.strip()
+        if not stripped or stripped.lower() == "null":
+            color_hexes = []
+        else:
+            try:
+                parsed = json.loads(stripped)
+            except Exception:
+                parsed = None
+            color_hexes = parsed if isinstance(parsed, list) else []
+    else:
+        color_hexes = []
+    return MaterialRead.model_validate({
+        "id": material.id,
+        "name": material.name,
+        "brand": material.brand,
+        "filament_type": material.filament_type,
+        "category": material.category,
+        "color": material.color,
+        "color_hex": material.color_hex,
+        "color_hexes": color_hexes,
+        "supplier": material.supplier,
+        "price_per_gram": material.price_per_gram,
+        "spool_weight_grams": material.spool_weight_grams,
+        "barcode": material.barcode,
+        "refill_barcode": material.refill_barcode,
+        "notes": material.notes,
+    })
 
 
 def _ensure_unique_material_name(session: Session, name: str) -> str:
