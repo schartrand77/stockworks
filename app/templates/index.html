@@ -274,8 +274,15 @@
               Search
               <input type="search" id="materials-search" placeholder="Search materials..." />
             </label>
+            <label class="table-control table-control-compact">
+              Filament view
+              <select id="materials-filament-view">
+                <option value="list">List</option>
+                <option value="gallery">Gallery</option>
+              </select>
+            </label>
           </div>
-          <div class="table-wrapper">
+          <div class="table-wrapper" id="materials-table-wrapper">
             <table id="materials-table">
               <thead>
                 <tr>
@@ -294,6 +301,7 @@
               <tbody></tbody>
             </table>
           </div>
+          <div class="filament-gallery" id="materials-gallery" hidden></div>
           <div class="pagination" id="materials-pagination">
             <span class="pagination-info" id="materials-pagination-info">Showing 0-0 of 0</span>
             <div class="pagination-actions">
@@ -372,8 +380,15 @@
                 <option value="all">All locations</option>
               </select>
             </label>
+            <label class="table-control table-control-compact">
+              Filament view
+              <select id="inventory-filament-view">
+                <option value="list">List</option>
+                <option value="gallery">Gallery</option>
+              </select>
+            </label>
           </div>
-          <div class="table-wrapper">
+          <div class="table-wrapper" id="inventory-table-wrapper">
             <table id="inventory-table">
               <thead>
                 <tr>
@@ -389,6 +404,7 @@
               <tbody></tbody>
             </table>
           </div>
+          <div class="filament-gallery" id="inventory-gallery" hidden></div>
           <div class="pagination" id="inventory-pagination">
             <span class="pagination-info" id="inventory-pagination-info">Showing 0-0 of 0</span>
             <div class="pagination-actions">

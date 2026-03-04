@@ -62,7 +62,10 @@ const materialColorEnabledInputs = Array.from(document.querySelectorAll(".materi
 const materialColorHexInputs = Array.from(document.querySelectorAll(".material-color-slot input[type='text']"));
 const materialColorPickers = Array.from(document.querySelectorAll(".material-color-slot input[type='color']"));
 const materialTableBody = document.querySelector("#materials-table tbody");
+const materialsTableWrapper = document.getElementById("materials-table-wrapper");
+const materialsGallery = document.getElementById("materials-gallery");
 const materialSearchInput = document.getElementById("materials-search");
+const materialsFilamentViewSelect = document.getElementById("materials-filament-view");
 let materialSortHeaders = [];
 const materialClearBtn = document.getElementById("material-clear");
 const materialRefreshBtn = document.getElementById("material-refresh");
@@ -85,9 +88,12 @@ const inventoryFields = {
   unit_cost_override: document.getElementById("inventory-cost"),
 };
 const inventoryTableBody = document.querySelector("#inventory-table tbody");
+const inventoryTableWrapper = document.getElementById("inventory-table-wrapper");
+const inventoryGallery = document.getElementById("inventory-gallery");
 const inventoryMaterialFilter = document.getElementById("inventory-material-filter");
 const inventoryColorFilter = document.getElementById("inventory-color-filter");
 const inventoryLocationFilter = document.getElementById("inventory-location-filter");
+const inventoryFilamentViewSelect = document.getElementById("inventory-filament-view");
 const inventoryClearBtn = document.getElementById("inventory-clear");
 const inventoryRefreshBtn = document.getElementById("inventory-refresh");
 const inventoryDeleteBtn = document.getElementById("inventory-delete");
@@ -292,10 +298,16 @@ const scannerState = {
 };
 
 const THEME_STORAGE_KEY = "stockworks-theme";
+const FILAMENT_VIEW_STORAGE_KEY_PREFIX = "stockworks-filament-view-";
+const FILAMENT_VIEW_MODES = new Set(["list", "gallery"]);
 const VALID_THEME_CHOICES = new Set(["light", "dark"]);
 const prefersDarkScheme = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
 let forcedThemeChoice = loadStoredThemeChoice();
 let deferredInstallPrompt = null;
+const filamentViewState = {
+  materials: loadStoredFilamentViewMode("materials"),
+  inventory: loadStoredFilamentViewMode("inventory"),
+};
 applyThemePreference(forcedThemeChoice);
 
 if (prefersDarkScheme) {
@@ -320,6 +332,7 @@ document.addEventListener("DOMContentLoaded", () => {
   updateMaterialColorRequirement();
   materialColorHexInputs.forEach((_, index) => syncMaterialColorInputs({ source: "text", index }));
   syncMaterialColorModeUi();
+  syncFilamentViewControls();
   setMaterialColorDropdownOpen(false);
   safeAsync(loadFilamentTypes);
   registerServiceWorker();
@@ -359,6 +372,52 @@ function normalizeHexValue(value) {
   return `#${hex.toUpperCase()}`;
 }
 
+const COLOR_NAME_FALLBACKS = {
+  black: "#111111",
+  white: "#F5F5F5",
+  ivory: "#FFFFF0",
+  gray: "#6B7280",
+  grey: "#6B7280",
+  charcoal: "#364152",
+  silver: "#BFC7D5",
+  red: "#DC2626",
+  orange: "#F97316",
+  yellow: "#FACC15",
+  gold: "#D4AF37",
+  green: "#16A34A",
+  lime: "#84CC16",
+  teal: "#0D9488",
+  cyan: "#06B6D4",
+  blue: "#2563EB",
+  navy: "#1E3A8A",
+  purple: "#7C3AED",
+  magenta: "#DB2777",
+  pink: "#EC4899",
+  brown: "#8B5A2B",
+  tan: "#D2B48C",
+  beige: "#D6C3A5",
+};
+
+function resolveColorFromWords(value) {
+  const text = String(value || "").trim().toLowerCase();
+  if (!text) {
+    return "";
+  }
+  if (COLOR_NAME_FALLBACKS[text]) {
+    return COLOR_NAME_FALLBACKS[text];
+  }
+  const words = text.split(/[\s/_-]+/g).filter(Boolean);
+  for (const word of words) {
+    if (COLOR_NAME_FALLBACKS[word]) {
+      return COLOR_NAME_FALLBACKS[word];
+    }
+    if (typeof CSS !== "undefined" && typeof CSS.supports === "function" && CSS.supports("color", word)) {
+      return word;
+    }
+  }
+  return "";
+}
+
 function resolveSwatchColor(colorName, colorHex) {
   const normalizedHex = normalizeHexValue(colorHex);
   if (normalizedHex) {
@@ -373,6 +432,10 @@ function resolveSwatchColor(colorName, colorHex) {
     if (trimmed && CSS.supports("color", trimmed)) {
       return trimmed;
     }
+  }
+  const resolvedByWords = resolveColorFromWords(colorName);
+  if (resolvedByWords) {
+    return resolvedByWords;
   }
   return "";
 }
@@ -679,7 +742,13 @@ function bindEvents() {
     materialColorDropdown.addEventListener("focusout", collapseMaterialColorDropdownAfterInteraction);
   }
   materialTableBody.addEventListener("click", handleMaterialRowClick);
+  if (materialsGallery) {
+    materialsGallery.addEventListener("click", handleMaterialRowClick);
+  }
   inventoryTableBody.addEventListener("click", handleInventoryRowClick);
+  if (inventoryGallery) {
+    inventoryGallery.addEventListener("click", handleInventoryRowClick);
+  }
   hardwareTableBody.addEventListener("click", handleHardwareRowClick);
   if (merchTableBody) {
     merchTableBody.addEventListener("click", handleMerchRowClick);
@@ -691,6 +760,13 @@ function bindEvents() {
     materialSearchInput.addEventListener("input", () => {
       filterState.materials.search = normalizeSearchTerm(materialSearchInput.value);
       paginationState.materials.page = 1;
+      renderMaterials();
+    });
+  }
+  if (materialsFilamentViewSelect) {
+    materialsFilamentViewSelect.addEventListener("change", () => {
+      filamentViewState.materials = normalizeFilamentViewMode(materialsFilamentViewSelect.value);
+      storeFilamentViewMode("materials", filamentViewState.materials);
       renderMaterials();
     });
   }
@@ -744,6 +820,13 @@ function bindEvents() {
     inventoryLocationFilter.addEventListener("change", () => {
       filterState.inventory.location = normalizeSearchTerm(inventoryLocationFilter.value) || "all";
       paginationState.inventory.page = 1;
+      renderInventory();
+    });
+  }
+  if (inventoryFilamentViewSelect) {
+    inventoryFilamentViewSelect.addEventListener("change", () => {
+      filamentViewState.inventory = normalizeFilamentViewMode(inventoryFilamentViewSelect.value);
+      storeFilamentViewMode("inventory", filamentViewState.inventory);
       renderInventory();
     });
   }
@@ -1216,11 +1299,85 @@ function formatColorChip(colorName, colorHex, colorHexes = []) {
   return `<span class="color-chip">${dot}${nameLabel}${hexLabel}</span>`;
 }
 
-function formatMaterialLabel(material) {
+function formatColorDots(colorName, colorHex, colorHexes = []) {
+  const normalizedHexes = resolveColorHexes(colorHexes, colorHex, colorName);
+  const swatches = normalizedHexes.length
+    ? normalizedHexes
+    : [resolveSwatchColor(colorName, colorHex)].filter((value) => Boolean(value));
+  if (!swatches.length) {
+    return `<span class="muted">No color</span>`;
+  }
+  const dots = swatches
+    .map(
+      (hex) =>
+        `<span class="color-dot" style="--swatch-fill: ${hex}; --swatch-color: ${hex}" aria-hidden="true"></span>`
+    )
+    .join("");
+  return `<span class="color-dot-list">${dots}</span>`;
+}
+
+function formatFilamentHero(colorName, colorHex, colorHexes = [], fallbackLabel = "No color") {
+  const normalizedHexes = resolveColorHexes(colorHexes, colorHex, colorName);
+  const primary = normalizedHexes[0] || resolveSwatchColor(colorName, colorHex) || "";
+  const fill = buildSwatchFill(normalizedHexes, colorName, colorHex);
+  const hasColor = Boolean(primary || fill);
+  const label = colorName ? escapeHtml(colorName) : escapeHtml(fallbackLabel);
+  const noColorClass = hasColor ? "" : " is-empty";
+  return `
+    <div class="filament-hero${noColorClass}">
+      <div class="filament-roll" style="--swatch-fill: ${fill || primary || "transparent"}; --swatch-color: ${primary || "transparent"}" aria-hidden="true">
+        <span class="filament-roll-core"></span>
+      </div>
+      <div class="filament-hero-label">${label}</div>
+    </div>`;
+}
+
+function formatFilamentColorDisplay(colorName, colorHex, colorHexes, mode = "chip") {
+  return mode === "dots"
+    ? formatColorDots(colorName, colorHex, colorHexes)
+    : formatColorChip(colorName, colorHex, colorHexes);
+}
+
+function formatMaterialLabel(material, mode = "chip") {
   if (!material) return "Unknown";
   const name = escapeHtml(material.name);
-  const colorChip = formatColorChip(material.color, material.color_hex, materialHexesForDisplay(material));
-  return `<span>${name}</span> ${colorChip}`;
+  const colorDisplay = formatFilamentColorDisplay(
+    material.color,
+    material.color_hex,
+    materialHexesForDisplay(material),
+    mode
+  );
+  return `<span>${name}</span> ${colorDisplay}`;
+}
+
+function materialInventorySummary(materialId) {
+  const matching = state.inventory.filter((item) => Number(item.material_id) === Number(materialId));
+  const quantity = matching.reduce((sum, item) => sum + Number(item.quantity_grams || 0), 0);
+  return {
+    count: matching.length,
+    quantity,
+  };
+}
+
+function syncFilamentSectionView(section, mode) {
+  const isGallery = mode === "gallery";
+  if (section === "materials") {
+    if (materialsTableWrapper) {
+      materialsTableWrapper.hidden = isGallery;
+    }
+    if (materialsGallery) {
+      materialsGallery.hidden = !isGallery;
+    }
+    return;
+  }
+  if (section === "inventory") {
+    if (inventoryTableWrapper) {
+      inventoryTableWrapper.hidden = isGallery;
+    }
+    if (inventoryGallery) {
+      inventoryGallery.hidden = !isGallery;
+    }
+  }
 }
 
 function normalizeSearchTerm(value) {
@@ -1492,6 +1649,8 @@ function renderMaterials() {
   const filtered = filterMaterials(state.materials);
   const sorted = sortMaterials(filtered);
   const { items, total, startIndex, endIndex, maxPage } = paginate(sorted, paginationState.materials);
+  const viewMode = normalizeFilamentViewMode(filamentViewState.materials);
+  syncFilamentSectionView("materials", viewMode);
   updatePaginationControls({
     total,
     startIndex,
@@ -1503,6 +1662,58 @@ function renderMaterials() {
     prevBtn: materialsPrevBtn,
     nextBtn: materialsNextBtn,
   });
+  if (viewMode === "gallery") {
+    if (!materialsGallery) {
+      return;
+    }
+    if (!state.materials.length) {
+      materialsGallery.innerHTML = `<div class="muted">No materials yet.</div>`;
+      return;
+    }
+    if (!filtered.length) {
+      materialsGallery.innerHTML = `<div class="muted">No matches for the current search or filter.</div>`;
+      return;
+    }
+    materialsGallery.innerHTML = items
+      .map((material) => {
+        const summary = materialInventorySummary(material.id);
+        const spoolWeight = Math.max(Number(material.spool_weight_grams || 0), 1);
+        const slotCount = Math.max(summary.count, 1);
+        const maxCapacity = Math.max(spoolWeight * slotCount, summary.quantity, 1);
+        const value = Math.max(0, summary.quantity);
+        const lowThreshold = Math.min(maxCapacity, spoolWeight);
+        const barcodeAction = material.barcode || material.refill_barcode
+          ? `<button class="small-button" data-action="print-barcode" data-id="${material.id}">Print</button>`
+          : "";
+        return `
+          <article class="filament-card" data-id="${material.id}">
+            <div class="filament-card-swatch">${formatFilamentHero(
+              material.color,
+              material.color_hex,
+              materialHexesForDisplay(material),
+              "No color"
+            )}</div>
+            <div class="filament-card-title">${escapeHtml(material.name)}</div>
+            <div class="filament-card-meta">
+              <span>${escapeHtml(material.brand || "Unknown brand")}</span>
+              <span>${escapeHtml(material.filament_type || "-")}</span>
+              <span>${escapeHtml(material.category || "-")}</span>
+            </div>
+            <div class="filament-card-meter-wrap">
+              <meter min="0" max="${maxCapacity.toFixed(2)}" value="${value.toFixed(2)}" low="${lowThreshold.toFixed(2)}"></meter>
+              <div class="filament-card-meter-label">${value.toFixed(2)} g in inventory across ${slotCount} spool(s)</div>
+            </div>
+            <div class="filament-card-actions">
+              <button class="small-button" data-action="edit" data-id="${material.id}">Edit</button>
+              ${barcodeAction}
+              <button class="small-button danger" data-action="delete" data-id="${material.id}">Delete</button>
+            </div>
+          </article>`;
+      })
+      .join("");
+    return;
+  }
+
   if (!state.materials.length) {
     materialTableBody.innerHTML = `<tr><td colspan="10" class="muted">No materials yet.</td></tr>`;
     return;
@@ -1558,6 +1769,8 @@ function renderMaterials() {
 function renderInventory() {
   const filtered = filterInventory(state.inventory);
   const { items, total, startIndex, endIndex, maxPage } = paginate(filtered, paginationState.inventory);
+  const viewMode = normalizeFilamentViewMode(filamentViewState.inventory);
+  syncFilamentSectionView("inventory", viewMode);
   updatePaginationControls({
     total,
     startIndex,
@@ -1569,6 +1782,60 @@ function renderInventory() {
     prevBtn: inventoryPrevBtn,
     nextBtn: inventoryNextBtn,
   });
+  if (viewMode === "gallery") {
+    if (!inventoryGallery) {
+      return;
+    }
+    if (!state.inventory.length) {
+      inventoryGallery.innerHTML = `<div class="muted">No inventory tracked yet.</div>`;
+      return;
+    }
+    if (!filtered.length) {
+      inventoryGallery.innerHTML = `<div class="muted">No matches for the current search or filter.</div>`;
+      return;
+    }
+    inventoryGallery.innerHTML = items
+      .map((item) => {
+        const quantity = Math.max(0, Number(item.quantity_grams || 0));
+        const reorder = Math.max(0, Number(item.reorder_level || 0));
+        const spoolWeight = Math.max(0, Number(item.material?.spool_weight_grams || 0));
+        const maxGauge = Math.max(quantity, spoolWeight, reorder * 2, 1);
+        const lowThreshold = Math.min(maxGauge, reorder);
+        const optimum = Math.min(maxGauge, Math.max(spoolWeight, reorder));
+        return `
+          <article class="filament-card" data-id="${item.id}">
+            <div class="filament-card-swatch">${formatFilamentHero(
+              item.material?.color,
+              item.material?.color_hex,
+              materialHexesForDisplay(item.material),
+              "No color"
+            )}</div>
+            <div class="filament-card-title">${escapeHtml(item.material?.name || "Unknown material")}</div>
+            <div class="filament-card-meta">
+              <span>${escapeHtml(item.location || "-")}</span>
+              <span>${escapeHtml(item.material?.filament_type || "-")}</span>
+              <span>${item.spool_serial ? escapeHtml(item.spool_serial) : "No serial"}</span>
+            </div>
+            <div class="filament-card-meter-wrap">
+              <meter
+                min="0"
+                max="${maxGauge.toFixed(2)}"
+                value="${quantity.toFixed(2)}"
+                low="${lowThreshold.toFixed(2)}"
+                optimum="${optimum.toFixed(2)}"
+              ></meter>
+              <div class="filament-card-meter-label">${quantity.toFixed(2)} g available - Reorder ${reorder.toFixed(2)} g</div>
+            </div>
+            <div class="filament-card-actions">
+              <button class="small-button" data-action="edit" data-id="${item.id}">Edit</button>
+              <button class="small-button danger" data-action="delete" data-id="${item.id}">Delete</button>
+            </div>
+          </article>`;
+      })
+      .join("");
+    return;
+  }
+
   if (!state.inventory.length) {
     inventoryTableBody.innerHTML = `<tr><td colspan="7" class="muted">No inventory tracked yet.</td></tr>`;
     return;
@@ -4039,6 +4306,42 @@ function getAppliedTheme() {
     return rootTheme;
   }
   return null;
+}
+
+function normalizeFilamentViewMode(value) {
+  return FILAMENT_VIEW_MODES.has(value) ? value : "list";
+}
+
+function filamentViewStorageKey(section) {
+  return `${FILAMENT_VIEW_STORAGE_KEY_PREFIX}${section}`;
+}
+
+function loadStoredFilamentViewMode(section) {
+  try {
+    const stored = localStorage.getItem(filamentViewStorageKey(section));
+    return normalizeFilamentViewMode(stored || "list");
+  } catch {
+    return "list";
+  }
+}
+
+function storeFilamentViewMode(section, mode) {
+  try {
+    localStorage.setItem(filamentViewStorageKey(section), normalizeFilamentViewMode(mode));
+  } catch {
+    // Ignore storage access issues
+  }
+}
+
+function syncFilamentViewControls() {
+  if (materialsFilamentViewSelect) {
+    materialsFilamentViewSelect.value = normalizeFilamentViewMode(filamentViewState.materials);
+  }
+  if (inventoryFilamentViewSelect) {
+    inventoryFilamentViewSelect.value = normalizeFilamentViewMode(filamentViewState.inventory);
+  }
+  syncFilamentSectionView("materials", normalizeFilamentViewMode(filamentViewState.materials));
+  syncFilamentSectionView("inventory", normalizeFilamentViewMode(filamentViewState.inventory));
 }
 
 function loadStoredThemeChoice() {

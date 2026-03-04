@@ -370,6 +370,11 @@ body::after {
   flex: 1 1 200px;
 }
 
+.table-control.table-control-compact {
+  min-width: 160px;
+  flex: 0 1 180px;
+}
+
 .card-body {
   padding: clamp(1.1rem, 2.5vw, 1.7rem);
   background: var(--sap-surface-alt);
@@ -740,9 +745,124 @@ label {
   flex-wrap: wrap;
 }
 
+.color-dot-list {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+
 .color-chip .color-hex {
   font-size: 0.8rem;
   color: var(--sap-text-muted);
+}
+
+.filament-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 1rem;
+}
+
+.filament-card {
+  border: 1px solid var(--sap-border);
+  border-radius: var(--sap-radius-md);
+  background: linear-gradient(180deg, var(--sap-surface), var(--sap-surface-alt));
+  box-shadow: 0 10px 24px rgba(9, 21, 41, 0.12);
+  padding: 0.85rem;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.filament-card-swatch {
+  margin-bottom: 0.2rem;
+}
+
+.filament-hero {
+  display: grid;
+  place-items: center;
+  gap: 0.55rem;
+  min-height: 160px;
+  border-radius: calc(var(--sap-radius-md) - 2px);
+  border: 1px solid var(--sap-border);
+  background:
+    radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.16), transparent 44%),
+    radial-gradient(circle at 80% 10%, rgba(255, 255, 255, 0.12), transparent 38%),
+    var(--sap-surface);
+}
+
+.filament-roll {
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  background: var(--swatch-fill, var(--swatch-color, transparent));
+  border: 3px solid rgba(255, 255, 255, 0.45);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.22),
+    0 10px 22px rgba(7, 17, 34, 0.25);
+  display: grid;
+  place-items: center;
+}
+
+.filament-roll-core {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.28);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.3);
+}
+
+.filament-hero.is-empty .filament-roll {
+  background:
+    repeating-linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.08) 0 9px,
+      rgba(255, 255, 255, 0.18) 9px 18px
+    ),
+    var(--sap-surface-muted);
+}
+
+.filament-hero-label {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--sap-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.filament-card-title {
+  font-weight: 700;
+  color: var(--sap-heading);
+  line-height: 1.2;
+}
+
+.filament-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  color: var(--sap-text-muted);
+}
+
+.filament-card-meter-wrap {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.filament-card meter {
+  width: 100%;
+  height: 0.85rem;
+  accent-color: var(--sap-primary);
+}
+
+.filament-card-meter-label {
+  font-size: 0.78rem;
+  color: var(--sap-text-muted);
+}
+
+.filament-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
 }
 
 .scan-field {
