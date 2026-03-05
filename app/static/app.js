@@ -1255,7 +1255,7 @@ async function loadBambuViewFilaments({ silent = false } = {}) {
     return;
   }
   try {
-    const payload = await api("/bambu-view/filaments");
+    const payload = await api("/printlab/filaments");
     state.bambuViewPrinters = Array.isArray(payload.printers) ? payload.printers : [];
     state.bambuViewLoadedCount = Number(payload.loaded_count || 0);
     state.bambuViewError = null;
@@ -1266,7 +1266,7 @@ async function loadBambuViewFilaments({ silent = false } = {}) {
     state.bambuViewPrinters = [];
     state.bambuViewLoadedCount = 0;
     state.bambuViewBaseUrl = "";
-    state.bambuViewError = error && error.message ? error.message : "Unable to sync Bambu View filament data.";
+    state.bambuViewError = error && error.message ? error.message : "Unable to sync PrintLab filament data.";
     state.bambuViewConfigured = error && Number(error.status) === 503 ? false : true;
     if (!silent) {
       setMessage(state.bambuViewError, "error");
@@ -2477,7 +2477,7 @@ function renderBambuView() {
   if (bambuViewStatusEl) {
     if (!state.bambuViewConfigured) {
       bambuViewStatusEl.textContent =
-        "Bambu View integration is not configured. Set BAMBU_VIEW_BASE_URL to load active filaments.";
+        "PrintLab integration is not configured. Set PRINTLAB_BASE_URL to load active filaments.";
       bambuViewStatusEl.classList.remove("error");
       bambuViewStatusEl.classList.add("muted");
     } else if (state.bambuViewError) {
@@ -2500,7 +2500,7 @@ function renderBambuView() {
     return;
   }
   if (!state.bambuViewConfigured) {
-    bambuViewTableBody.innerHTML = `<tr><td colspan="6" class="muted">Configure BAMBU_VIEW_* settings to sync loaded filaments.</td></tr>`;
+    bambuViewTableBody.innerHTML = `<tr><td colspan="6" class="muted">Configure PRINTLAB_* settings to sync loaded filaments.</td></tr>`;
     return;
   }
   if (state.bambuViewError) {
@@ -2554,11 +2554,11 @@ function renderBambuView() {
     }
   }
   if (!rows.length && state.bambuViewPrinters.length) {
-    bambuViewTableBody.innerHTML = `<tr><td colspan="6" class="muted">No printer details reported by Bambu View.</td></tr>`;
+    bambuViewTableBody.innerHTML = `<tr><td colspan="6" class="muted">No printer details reported by PrintLab.</td></tr>`;
     return;
   }
   if (!rows.length) {
-    bambuViewTableBody.innerHTML = `<tr><td colspan="6" class="muted">No Bambu View data loaded yet.</td></tr>`;
+    bambuViewTableBody.innerHTML = `<tr><td colspan="6" class="muted">No PrintLab data loaded yet.</td></tr>`;
     return;
   }
   bambuViewTableBody.innerHTML = rows.join("");
@@ -4035,6 +4035,7 @@ async function api(path, { method = "GET", body, headers } = {}) {
   const raw = await response.text();
   if (!response.ok) {
     let message = raw || `Request failed (${response.status})`;
+    const contentType = (response.headers.get("content-type") || "").toLowerCase();
     try {
       const data = raw ? JSON.parse(raw) : null;
       if (data && typeof data.detail === "string") {
@@ -4044,6 +4045,10 @@ async function api(path, { method = "GET", body, headers } = {}) {
       }
     } catch {
       // ignore JSON parse errors and fall back to raw string
+    }
+    if (contentType.includes("text/html") || looksLikeHtml(raw)) {
+      const statusLabel = response.statusText ? `${response.status} ${response.statusText}` : `${response.status}`;
+      message = `Request failed (${statusLabel}). Received an HTML error page from an upstream service.`;
     }
     const error = new Error(message);
     error.status = response.status;
@@ -4057,6 +4062,11 @@ async function api(path, { method = "GET", body, headers } = {}) {
     return JSON.parse(raw);
   }
   return raw;
+}
+
+function looksLikeHtml(value) {
+  const sample = String(value || "").trimStart().slice(0, 240).toLowerCase();
+  return sample.startsWith("<!doctype html") || sample.startsWith("<html");
 }
 
 async function fetchAllPages(path, { pageSize = 200 } = {}) {

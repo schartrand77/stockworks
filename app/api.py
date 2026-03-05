@@ -28,11 +28,11 @@ from sqlmodel import Session, func, select
 from starlette.middleware.sessions import SessionMiddleware
 
 from .barcodes import render_barcode_png
-from .bambu_view import (
-    BambuViewAuthenticationError,
-    BambuViewIntegrationError,
-    BambuViewNotConfiguredError,
-    get_bambu_view_client,
+from .printlab import (
+    PrintLabAuthenticationError,
+    PrintLabIntegrationError,
+    PrintLabNotConfiguredError,
+    get_printlab_client,
 )
 from .color_resolver import normalize_hex, normalize_hex_list
 from .db import get_session, init_db
@@ -1220,42 +1220,51 @@ def fetch_orderworks_jobs(
     return {"jobs": jobs, "base_url": base_url_override}
 
 
+@app.get("/printlab/filaments")
 @app.get("/bambu-view/filaments")
-def fetch_bambu_view_filaments(_: bool = Depends(require_auth)):
+def fetch_printlab_filaments(_: bool = Depends(require_auth)):
     trace_id = secrets.token_hex(4)
-    _bambu_trace(trace_id, "start")
-    client = get_bambu_view_client()
+    _printlab_trace(trace_id, "start")
+    client = get_printlab_client()
     if not client.is_configured:
-        _bambu_trace(trace_id, "not_configured")
+        _printlab_trace(trace_id, "not_configured")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Bambu View integration is not configured. Set BAMBU_VIEW_BASE_URL.",
+            detail="PrintLab integration is not configured. Set PRINTLAB_BASE_URL.",
         )
     try:
-        fleet = client.fetch_fleet()
-    except BambuViewNotConfiguredError:
-        _bambu_trace(trace_id, "not_configured_exception")
+        fleet = client.fetch_printers()
+    except PrintLabNotConfiguredError:
+        _printlab_trace(trace_id, "not_configured_exception")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Bambu View integration is not configured.",
+            detail="PrintLab integration is not configured.",
         )
-    except BambuViewAuthenticationError as exc:
-        _bambu_trace(trace_id, "auth_error", error=str(exc))
+    except PrintLabAuthenticationError as exc:
+        _printlab_trace(trace_id, "auth_error", error=str(exc))
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
-    except BambuViewIntegrationError as exc:
-        _bambu_trace(trace_id, "integration_error", error=str(exc))
+    except PrintLabIntegrationError as exc:
+        _printlab_trace(trace_id, "integration_error", error=str(exc))
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
-    _bambu_trace(trace_id, "fleet_loaded", fleet_count=len(fleet))
+    _printlab_trace(trace_id, "fleet_loaded", fleet_count=len(fleet))
     printers = []
     loaded_count = 0
-    spool_cache: dict[str, list[dict[str, Any]]] = {}
     for printer in fleet:
         if not isinstance(printer, dict):
             continue
-        printer_id = str(printer.get("printer_id") or "")
-        ams, trays = _extract_ams_trays(printer)
-        _bambu_trace(
+        printer_id = str(printer.get("id") or "").strip()
+        if not printer_id:
+            continue
+        try:
+            state = client.fetch_printer_state(printer_id)
+        except PrintLabIntegrationError as exc:
+            _printlab_trace(trace_id, "printer_state_error", printer_id=printer_id, error=str(exc))
+            state = {}
+
+        ams = state.get("ams") if isinstance(state.get("ams"), dict) else {}
+        trays = _extract_printlab_trays(ams)
+        _printlab_trace(
             trace_id,
             "printer_parsed",
             printer_id=printer_id,
@@ -1264,49 +1273,22 @@ def fetch_bambu_view_filaments(_: bool = Depends(require_auth)):
             tray_candidates=len(trays),
         )
         loaded_trays = [_normalize_loaded_tray(item) for item in trays if _is_loaded_tray(item)]
-        if not loaded_trays:
-            cached_spools = spool_cache.get(printer_id)
-            if cached_spools is None:
-                try:
-                    spool_payload = client.fetch_spools(printer_id=printer_id or None)
-                    raw_spools = spool_payload.get("spools") if isinstance(spool_payload.get("spools"), list) else []
-                    cached_spools = [item for item in raw_spools if isinstance(item, dict)]
-                    _bambu_trace(
-                        trace_id,
-                        "spools_loaded",
-                        printer_id=printer_id,
-                        spool_count=len(cached_spools),
-                        spool_keys=sorted(cached_spools[0].keys()) if cached_spools else [],
-                    )
-                except BambuViewIntegrationError:
-                    _bambu_trace(trace_id, "spools_load_error", printer_id=printer_id)
-                    cached_spools = []
-                spool_cache[printer_id] = cached_spools
-            loaded_trays = [
-                _normalize_spool_tray(spool, fallback_slot=index)
-                for index, spool in enumerate(cached_spools, start=1)
-                if _is_loaded_spool(spool)
-            ]
-            _bambu_trace(
-                trace_id,
-                "spools_filtered",
-                printer_id=printer_id,
-                spool_count=len(cached_spools),
-                accepted_count=len(loaded_trays),
-            )
         loaded_count += len(loaded_trays)
+        ams_slots = ams.get("slots")
+        ams_slot_count = len(ams_slots) if isinstance(ams_slots, list) else ams.get("slots")
+        ams_units = 1 if isinstance(ams_slots, list) and ams_slots else 0
         printers.append(
             {
                 "printer_id": printer_id,
-                "printer_name": str(printer.get("printer_name") or printer.get("printer_id") or "Printer"),
-                "ams_slots": ams.get("slots"),
-                "ams_units": ams.get("units"),
+                "printer_name": str(printer.get("name") or printer_id or "Printer"),
+                "ams_slots": ams_slot_count,
+                "ams_units": ams_units,
                 "loaded_trays": loaded_trays,
             }
         )
-    _bambu_trace(trace_id, "done", printer_count=len(printers), loaded_count=loaded_count)
+    _printlab_trace(trace_id, "done", printer_count=len(printers), loaded_count=loaded_count)
     payload = {"printers": printers, "loaded_count": loaded_count, "base_url": client.base_url}
-    if _bambu_trace_enabled():
+    if _printlab_trace_enabled():
         payload["trace_id"] = trace_id
     return payload
 
@@ -1478,6 +1460,46 @@ def _parse_tray_label(label: str) -> tuple[object, object]:
     return unit, slot_value
 
 
+def _extract_printlab_trays(ams: dict[str, Any]) -> list[dict[str, Any]]:
+    slots = ams.get("slots")
+    if not isinstance(slots, list):
+        return []
+    ams_index = ams.get("ams_index")
+    if isinstance(ams_index, int):
+        unit_hint: object = ams_index + 1
+    else:
+        unit_hint = ams_index
+    trays: list[dict[str, Any]] = []
+    for raw_slot in slots:
+        if not isinstance(raw_slot, dict):
+            continue
+        slot_index = raw_slot.get("index")
+        if isinstance(slot_index, int):
+            slot_value: object = slot_index + 1
+        else:
+            slot_value = slot_index
+        if bool(raw_slot.get("empty")):
+            continue
+        state = "loaded"
+        remain = raw_slot.get("remain_percent")
+        if isinstance(remain, (int, float)):
+            state = f"{remain:.0f}% remaining"
+        elif isinstance(remain, str) and remain.strip():
+            state = f"{remain.strip()}% remaining"
+        trays.append(
+            {
+                "id": _first_non_empty_str(raw_slot.get("id"), raw_slot.get("name")),
+                "unit": unit_hint,
+                "slot": slot_value,
+                "type": _first_non_empty_str(raw_slot.get("type")),
+                "name": _first_non_empty_str(raw_slot.get("name")),
+                "color": _first_non_empty_str(raw_slot.get("color_hex")),
+                "state": state,
+            }
+        )
+    return trays
+
+
 def _extract_ams_trays(printer: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     ams = printer.get("ams") if isinstance(printer.get("ams"), dict) else {}
     trays: list[dict[str, Any]] = []
@@ -1547,18 +1569,18 @@ def _looks_like_loaded_label(value: str) -> bool:
     return normalized not in {"empty", "none", "null", "unknown", "n/a", "-"}
 
 
-def _bambu_trace_enabled() -> bool:
-    raw = (os.environ.get("BAMBU_VIEW_TRACE") or "").strip().lower()
+def _printlab_trace_enabled() -> bool:
+    raw = (os.environ.get("PRINTLAB_TRACE") or os.environ.get("BAMBU_VIEW_TRACE") or "").strip().lower()
     return raw in {"1", "true", "yes", "on"}
 
 
-def _bambu_trace(trace_id: str, event: str, **fields: Any) -> None:
-    if not _bambu_trace_enabled():
+def _printlab_trace(trace_id: str, event: str, **fields: Any) -> None:
+    if not _printlab_trace_enabled():
         return
     if fields:
-        logger.warning("bambu_trace trace_id=%s event=%s fields=%s", trace_id, event, fields)
+        logger.warning("printlab_trace trace_id=%s event=%s fields=%s", trace_id, event, fields)
         return
-    logger.warning("bambu_trace trace_id=%s event=%s", trace_id, event)
+    logger.warning("printlab_trace trace_id=%s event=%s", trace_id, event)
 
 
 def _delete_material_dependencies(session: Session, material_id: int) -> None:

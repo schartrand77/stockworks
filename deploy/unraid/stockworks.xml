@@ -28,9 +28,9 @@
   <Config Name="Secret Key" Target="SECRET_KEY" Default="" Description="Secret used to sign session cookies (32+ characters)" Type="Variable" Display="always" Required="true" Mask="true" />
   <Config Name="HTTPS-Only Session Cookie" Target="SESSION_HTTPS_ONLY" Default="0" Description="Set to 1 when the app is accessed via HTTPS so login cookies are marked Secure" Type="Variable" Display="advanced" Required="false" Mask="false" />
   <Config Name="OrderWorks Base URL" Target="ORDERWORKS_BASE_URL" Default="" Description="Optional OrderWorks dashboard URL used for \"Open\" links" Type="Variable" Display="advanced" Required="false" Mask="false" />
-  <Config Name="Bambu View Base URL" Target="BAMBU_VIEW_BASE_URL" Default="" Description="Optional Bambu View URL used to read loaded AMS trays" Type="Variable" Display="advanced" Required="false" Mask="false" />
-  <Config Name="Bambu View API Key" Target="BAMBU_VIEW_API_KEY" Default="" Description="Optional API key for Bambu View API access" Type="Variable" Display="advanced" Required="false" Mask="true" />
-  <Config Name="Bambu View API Auth Header" Target="BAMBU_VIEW_API_AUTH_HEADER" Default="X-API-Key" Description="Header name Bambu View expects for BAMBU_VIEW_API_KEY" Type="Variable" Display="advanced" Required="false" Mask="false" />
-  <Config Name="Bambu View Admin Username" Target="BAMBU_VIEW_ADMIN_USERNAME" Default="" Description="Optional Bambu View login username (used when API key is not set)" Type="Variable" Display="advanced" Required="false" Mask="false" />
-  <Config Name="Bambu View Admin Password" Target="BAMBU_VIEW_ADMIN_PASSWORD" Default="" Description="Optional Bambu View login password (used when API key is not set)" Type="Variable" Display="advanced" Required="false" Mask="true" />
+  <Config Name="PrintLab Base URL" Target="PRINTLAB_BASE_URL" Default="" Description="Optional PrintLab URL used to read loaded AMS trays" Type="Variable" Display="advanced" Required="false" Mask="false" />
+  <Config Name="PrintLab API Key" Target="PRINTLAB_API_KEY" Default="" Description="Optional API key for PrintLab API access" Type="Variable" Display="advanced" Required="false" Mask="true" />
+  <Config Name="PrintLab Bearer Token" Target="PRINTLAB_BEARER_TOKEN" Default="" Description="Optional bearer token for PrintLab API access" Type="Variable" Display="advanced" Required="false" Mask="true" />
+  <Config Name="PrintLab API Auth Header" Target="PRINTLAB_API_AUTH_HEADER" Default="X-API-Key" Description="Header name PrintLab expects for PRINTLAB_API_KEY" Type="Variable" Display="advanced" Required="false" Mask="false" />
+  <Config Name="PrintLab Trace Logging" Target="PRINTLAB_TRACE" Default="0" Description="Set to 1 to enable PrintLab integration trace logs" Type="Variable" Display="advanced" Required="false" Mask="false" />
 </Container>

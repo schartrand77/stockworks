@@ -71,16 +71,16 @@ There are two ways your admin can connect StockWorks:
 - Each job may include a link to open the same order in OrderWorks.
 - If something is missing, you will see a message explaining what is needed.
 
-## Bambu View filament sync (loaded trays)
-StockWorks can also read loaded AMS trays from Bambu View so you can quickly see what filament is currently mounted.
+## PrintLab filament sync (loaded trays)
+StockWorks can also read loaded AMS trays from PrintLab so you can quickly see what filament is currently mounted.
 
 Set these variables if you want that integration:
-- `BAMBU_VIEW_BASE_URL` (required for Bambu View sync)
-- `BAMBU_VIEW_API_KEY` (recommended when Bambu View API auth is enabled)
-- `BAMBU_VIEW_API_AUTH_HEADER` (defaults to `X-API-Key`)
-- `BAMBU_VIEW_ADMIN_USERNAME` and `BAMBU_VIEW_ADMIN_PASSWORD` (optional fallback if you are not using an API key)
+- `PRINTLAB_BASE_URL` (required for PrintLab sync)
+- `PRINTLAB_API_KEY` (optional, if PrintLab API auth is enabled)
+- `PRINTLAB_BEARER_TOKEN` (optional bearer auth token)
+- `PRINTLAB_API_AUTH_HEADER` (defaults to `X-API-Key`)
 
-The loaded tray list appears in **Settings > Bambu View**.
+The loaded tray list appears in **Settings > PrintLab**.
 
 ## MakerWorks merch sync
 If MakerWorks merch has been enabled, open **Hardware** and click **Sync MakerWorks merch**.
