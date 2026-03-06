@@ -4319,7 +4319,7 @@ function getAppliedTheme() {
 }
 
 function normalizeFilamentViewMode(value) {
-  return FILAMENT_VIEW_MODES.has(value) ? value : "list";
+  return FILAMENT_VIEW_MODES.has(value) ? value : "gallery";
 }
 
 function filamentViewStorageKey(section) {
@@ -4329,9 +4329,9 @@ function filamentViewStorageKey(section) {
 function loadStoredFilamentViewMode(section) {
   try {
     const stored = localStorage.getItem(filamentViewStorageKey(section));
-    return normalizeFilamentViewMode(stored || "list");
+    return normalizeFilamentViewMode(stored || "gallery");
   } catch {
-    return "list";
+    return "gallery";
   }
 }
 
