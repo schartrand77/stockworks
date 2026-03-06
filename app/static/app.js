@@ -768,6 +768,7 @@ function bindEvents() {
       filamentViewState.materials = normalizeFilamentViewMode(materialsFilamentViewSelect.value);
       storeFilamentViewMode("materials", filamentViewState.materials);
       renderMaterials();
+      scrollFilamentSectionIntoView("materials");
     });
   }
   materialSortHeaders = Array.from(
@@ -828,6 +829,7 @@ function bindEvents() {
       filamentViewState.inventory = normalizeFilamentViewMode(inventoryFilamentViewSelect.value);
       storeFilamentViewMode("inventory", filamentViewState.inventory);
       renderInventory();
+      scrollFilamentSectionIntoView("inventory");
     });
   }
   if (modelsFilterSelect) {
@@ -1378,6 +1380,20 @@ function syncFilamentSectionView(section, mode) {
       inventoryGallery.hidden = !isGallery;
     }
   }
+}
+
+function scrollFilamentSectionIntoView(section) {
+  const target = section === "materials"
+    ? document.getElementById("materials-controls")
+    : section === "inventory"
+      ? document.getElementById("inventory-controls")
+      : null;
+  if (!target) {
+    return;
+  }
+  requestAnimationFrame(() => {
+    target.scrollIntoView({ block: "start", behavior: "auto" });
+  });
 }
 
 function normalizeSearchTerm(value) {
