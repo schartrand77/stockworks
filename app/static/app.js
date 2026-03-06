@@ -301,6 +301,7 @@ const THEME_STORAGE_KEY = "stockworks-theme";
 const FILAMENT_VIEW_STORAGE_KEY_PREFIX = "stockworks-filament-view-";
 const FILAMENT_VIEW_MODES = new Set(["list", "gallery"]);
 const VALID_THEME_CHOICES = new Set(["light", "dark"]);
+const NON_FILAMENT_INVENTORY_LOCATIONS = new Set(["model", "models", "merch", "hardware"]);
 const prefersDarkScheme = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
 let forcedThemeChoice = loadStoredThemeChoice();
 let deferredInstallPrompt = null;
@@ -1541,7 +1542,7 @@ function filterInventory(items) {
   const location = filterState.inventory.location;
   const signature = `${material}|${color}|${location}`;
   return memoizedArray("inventoryFilter", items, signature, () => {
-    let filtered = items;
+    let filtered = items.filter((item) => isFilamentInventoryItem(item));
     if (material !== "all") {
       filtered = filtered.filter((item) => normalizeSearchTerm(item.material?.name) === material);
     }
@@ -1553,6 +1554,14 @@ function filterInventory(items) {
     }
     return filtered;
   });
+}
+
+function isFilamentInventoryItem(item) {
+  if (!item || typeof item !== "object") {
+    return false;
+  }
+  const location = normalizeSearchTerm(item.location);
+  return !NON_FILAMENT_INVENTORY_LOCATIONS.has(location);
 }
 
 function filterModels(items) {
@@ -1647,9 +1656,10 @@ function populateInventoryFilters() {
   if (!inventoryMaterialFilter || !inventoryColorFilter || !inventoryLocationFilter) {
     return;
   }
-  const materials = buildFilterOptions(state.inventory.map((item) => item.material?.name));
-  const colors = buildFilterOptions(state.inventory.map((item) => item.material?.color));
-  const locations = buildFilterOptions(state.inventory.map((item) => item.location));
+  const inventoryItems = state.inventory.filter((item) => isFilamentInventoryItem(item));
+  const materials = buildFilterOptions(inventoryItems.map((item) => item.material?.name));
+  const colors = buildFilterOptions(inventoryItems.map((item) => item.material?.color));
+  const locations = buildFilterOptions(inventoryItems.map((item) => item.location));
 
   const setOptions = (select, values, allLabel, currentValue) => {
     const options = [`<option value="all">${allLabel}</option>`]
@@ -2635,7 +2645,8 @@ function populateMaterialOptions() {
 }
 
 function populateInventoryOptions() {
-  const options = state.inventory
+  const inventoryItems = state.inventory.filter((item) => isFilamentInventoryItem(item));
+  const options = inventoryItems
     .map((item) => {
       if (!item.material) {
         return `<option value="${item.id}">Item ${item.id}</option>`;
@@ -2648,7 +2659,7 @@ function populateInventoryOptions() {
     .join("");
   const currentValue = movementInventorySelect.value;
   movementInventorySelect.innerHTML = `<option value="">Select inventory item...</option>${options}`;
-  if (options && currentValue && state.inventory.some((i) => String(i.id) === currentValue)) {
+  if (options && currentValue && inventoryItems.some((i) => String(i.id) === currentValue)) {
     movementInventorySelect.value = currentValue;
   }
 }

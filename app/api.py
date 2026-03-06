@@ -2268,6 +2268,32 @@ def _sync_makerworks_merch_to_hardware(session: Session) -> dict[str, Any]:
         ],
     )
     category_column = _find_matching_column(available_columns, ["category", "productCategory", "type"])
+    type_column = _find_matching_column(
+        available_columns,
+        [
+            "productType",
+            "product_type",
+            "templateType",
+            "template_type",
+            "itemType",
+            "item_type",
+            "listingType",
+            "listing_type",
+            "templateKind",
+            "template_kind",
+            "kind",
+        ],
+    )
+    merch_flag_column = _find_matching_column(
+        available_columns,
+        [
+            "isMerch",
+            "is_merch",
+            "merch",
+            "isMerchandise",
+            "is_merchandise",
+        ],
+    )
     color_column = _find_matching_column(available_columns, ["color", "colour"])
     size_column = _find_matching_column(available_columns, ["size", "variantSize"])
     style_column = _find_matching_column(available_columns, ["style", "variantStyle"])
@@ -2305,6 +2331,14 @@ def _sync_makerworks_merch_to_hardware(session: Session) -> dict[str, Any]:
         select_parts.append(f'{_quote_identifier(category_column)} AS "category"')
     else:
         select_parts.append('NULL AS "category"')
+    if type_column:
+        select_parts.append(f'{_quote_identifier(type_column)} AS "product_type"')
+    else:
+        select_parts.append('NULL AS "product_type"')
+    if merch_flag_column:
+        select_parts.append(f'{_quote_identifier(merch_flag_column)} AS "is_merch"')
+    else:
+        select_parts.append('NULL AS "is_merch"')
     if color_column:
         select_parts.append(f'{_quote_identifier(color_column)} AS "merch_color"')
     else:
@@ -2370,6 +2404,18 @@ def _sync_makerworks_merch_to_hardware(session: Session) -> dict[str, Any]:
         if not makerworks_id or not title:
             skipped += 1
             continue
+        raw_is_merch = row.get("is_merch")
+        is_merch_flag = False
+        if raw_is_merch is not None:
+            is_merch_flag = str(raw_is_merch).strip().lower() in {"1", "true", "t", "yes", "y", "on"}
+        product_type = str(row.get("product_type") or "").strip().lower()
+        source_category = str(row.get("category") or "").strip()
+        normalized_category = source_category.lower()
+        is_merch_type = product_type in {"merch", "merchandise", "apparel", "accessory", "accessories"}
+        is_merch_category = normalized_category in {"merch", "merchandise", "apparel", "accessory", "accessories"}
+        if not (is_merch_flag or is_merch_type or is_merch_category):
+            skipped += 1
+            continue
         synced_ids.add(makerworks_id)
         item = linked_by_template_id.get(makerworks_id)
         if item is None:
@@ -2378,7 +2424,6 @@ def _sync_makerworks_merch_to_hardware(session: Session) -> dict[str, Any]:
         reorder_level = _coerce_non_negative_number(row.get("reorder_level"))
         unit_of_measure = str(row.get("unit_of_measure") or "").strip() or "piece"
         description = str(row.get("description") or "").strip() or None
-        source_category = str(row.get("category") or "").strip()
         category = source_category or "merch"
         merch_color = str(row.get("merch_color") or "").strip() or None
         merch_size = str(row.get("merch_size") or "").strip() or None
