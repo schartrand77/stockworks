@@ -1361,6 +1361,15 @@ function materialInventorySummary(materialId) {
   };
 }
 
+function materialSpoolPrice(material) {
+  const pricePerGram = Number(material?.price_per_gram || 0);
+  const spoolWeight = Number(material?.spool_weight_grams || 0);
+  if (!Number.isFinite(pricePerGram) || !Number.isFinite(spoolWeight) || spoolWeight <= 0) {
+    return 0;
+  }
+  return pricePerGram * spoolWeight;
+}
+
 function syncFilamentSectionView(section, mode) {
   const isGallery = mode === "gallery";
   if (section === "materials") {
@@ -1454,6 +1463,8 @@ function getMaterialSortValue(material, key) {
   switch (key) {
     case "price_per_gram":
       return Number(material.price_per_gram || 0);
+    case "spool_price":
+      return materialSpoolPrice(material);
     case "spool_weight_grams":
       return Number(material.spool_weight_grams || 0);
     case "filament_type":
@@ -1764,7 +1775,7 @@ function renderMaterials() {
           <td>${escapeHtml(material.filament_type)}</td>
           <td>${escapeHtml(material.category || "")}</td>
           <td>${formatColorChip(material.color, material.color_hex, materialHexesForDisplay(material))}</td>
-          <td>$${material.price_per_gram.toFixed(2)}</td>
+          <td>${formatCurrency(materialSpoolPrice(material))}</td>
           <td>${material.spool_weight_grams}</td>
           <td>${escapeHtml(material.supplier || "")}</td>
           <td>
@@ -2952,7 +2963,7 @@ function startMaterialEdit(id) {
   });
   materialFields.supplier.value = material.supplier || "";
   materialFields.brand.value = material.brand || "";
-  materialFields.price_per_gram.value = material.price_per_gram;
+  materialFields.price_per_gram.value = materialSpoolPrice(material).toFixed(2);
   materialFields.spool_weight_grams.value = material.spool_weight_grams;
   materialFields.barcode.value = material.barcode || "";
   materialFields.refill_barcode.value = material.refill_barcode || "";
@@ -3161,12 +3172,13 @@ function buildMaterialPayload() {
     setMessage("Provide at least one valid hex color for the material.", "error");
     return null;
   }
-  const price = Number(materialFields.price_per_gram.value);
+  const spoolPrice = Number(materialFields.price_per_gram.value);
   const spool = Number(materialFields.spool_weight_grams.value);
-  if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(spool) || spool <= 0) {
-    setMessage("Price and spool weight must be positive numbers.", "error");
+  if (!Number.isFinite(spoolPrice) || spoolPrice <= 0 || !Number.isFinite(spool) || spool <= 0) {
+    setMessage("Spool price and spool weight must be positive numbers.", "error");
     return null;
   }
+  const pricePerGram = spoolPrice / spool;
   return {
     name: materialFields.name.value.trim(),
     filament_type: materialFields.filament_type.value.trim(),
@@ -3176,7 +3188,7 @@ function buildMaterialPayload() {
     color_hexes: normalizedHexes.length > 1 ? normalizedHexes : null,
     supplier: optionalString(materialFields.supplier.value),
     brand: optionalString(materialFields.brand.value),
-    price_per_gram: price,
+    price_per_gram: pricePerGram,
     spool_weight_grams: Math.round(spool),
     barcode: optionalString(normalizeBarcode(materialFields.barcode.value)),
     refill_barcode: optionalString(normalizeBarcode(materialFields.refill_barcode.value)),
