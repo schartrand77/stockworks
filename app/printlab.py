@@ -87,8 +87,17 @@ class PrintLabClient:
             hint += " Verify PRINTLAB_BASE_URL points to your PrintLab instance."
         return f"{operation} failed with HTTP {status_label}{reason_label}{host_label}.{hint}"
 
-    def fetch_printers(self) -> List[Dict[str, Any]]:
-        response = self._request("GET", "/api/printers")
+    def _parse_items_payload(self, data: Any, operation: str) -> List[Dict[str, Any]]:
+        if isinstance(data, dict):
+            items = data.get("items")
+            if isinstance(items, list):
+                return [item for item in items if isinstance(item, dict)]
+        elif isinstance(data, list):
+            return [item for item in data if isinstance(item, dict)]
+        raise PrintLabIntegrationError(f"{operation} response did not include an items list.")
+
+    def _request_json(self, method: str, path: str, operation: str) -> Any:
+        response = self._request(method, path)
         if response.status_code in {401, 403}:
             raise PrintLabAuthenticationError(
                 "PrintLab rejected the request. Configure PRINTLAB_API_KEY or PRINTLAB_BEARER_TOKEN."
@@ -97,36 +106,38 @@ class PrintLabClient:
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
             raise PrintLabIntegrationError(
-                self._format_http_status_error(exc, "PrintLab printers request")
+                self._format_http_status_error(exc, operation)
             ) from exc
         try:
-            data = response.json()
+            return response.json()
         except ValueError as exc:
-            raise PrintLabIntegrationError("PrintLab printers response returned invalid JSON.") from exc
-        items = data.get("items")
-        if not isinstance(items, list):
-            raise PrintLabIntegrationError("PrintLab printers response did not include an items list.")
-        return [item for item in items if isinstance(item, dict)]
+            raise PrintLabIntegrationError(f"{operation} response returned invalid JSON.") from exc
+
+    def fetch_printers(self) -> List[Dict[str, Any]]:
+        printers_error: Optional[PrintLabIntegrationError] = None
+        try:
+            data = self._request_json("GET", "/api/printers", "PrintLab printers request")
+            return self._parse_items_payload(data, "PrintLab printers")
+        except PrintLabAuthenticationError:
+            raise
+        except PrintLabIntegrationError as exc:
+            printers_error = exc
+
+        try:
+            data = self._request_json("GET", "/api/fleet", "PrintLab fleet request")
+            return self._parse_items_payload(data, "PrintLab fleet")
+        except PrintLabAuthenticationError:
+            raise
+        except PrintLabIntegrationError:
+            if printers_error is not None:
+                raise printers_error
+            raise
 
     def fetch_printer_state(self, printer_id: str) -> Dict[str, Any]:
         clean_printer_id = str(printer_id or "").strip()
         if not clean_printer_id:
             raise PrintLabIntegrationError("PrintLab printer id is required for state requests.")
-        response = self._request("GET", f"/api/printers/{clean_printer_id}/state")
-        if response.status_code in {401, 403}:
-            raise PrintLabAuthenticationError(
-                "PrintLab rejected the request. Configure PRINTLAB_API_KEY or PRINTLAB_BEARER_TOKEN."
-            )
-        try:
-            response.raise_for_status()
-        except httpx.HTTPStatusError as exc:
-            raise PrintLabIntegrationError(
-                self._format_http_status_error(exc, "PrintLab printer state request")
-            ) from exc
-        try:
-            data = response.json()
-        except ValueError as exc:
-            raise PrintLabIntegrationError("PrintLab printer state response returned invalid JSON.") from exc
+        data = self._request_json("GET", f"/api/printers/{clean_printer_id}/state", "PrintLab printer state request")
         if not isinstance(data, dict):
             raise PrintLabIntegrationError("PrintLab printer state response did not include an object payload.")
         return data
