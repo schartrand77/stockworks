@@ -763,6 +763,10 @@ label {
   gap: 1rem;
 }
 
+.filament-gallery[hidden] {
+  display: none;
+}
+
 .filament-card {
   border: 1px solid var(--sap-border);
   border-radius: var(--sap-radius-md);

@@ -1371,24 +1371,24 @@ function materialSpoolPrice(material) {
   return pricePerGram * spoolWeight;
 }
 
+function setElementHiddenState(element, hidden) {
+  if (!element) {
+    return;
+  }
+  element.hidden = hidden;
+  element.setAttribute("aria-hidden", hidden ? "true" : "false");
+}
+
 function syncFilamentSectionView(section, mode) {
   const isGallery = mode === "gallery";
   if (section === "materials") {
-    if (materialsTableWrapper) {
-      materialsTableWrapper.hidden = isGallery;
-    }
-    if (materialsGallery) {
-      materialsGallery.hidden = !isGallery;
-    }
+    setElementHiddenState(materialsTableWrapper, isGallery);
+    setElementHiddenState(materialsGallery, !isGallery);
     return;
   }
   if (section === "inventory") {
-    if (inventoryTableWrapper) {
-      inventoryTableWrapper.hidden = isGallery;
-    }
-    if (inventoryGallery) {
-      inventoryGallery.hidden = !isGallery;
-    }
+    setElementHiddenState(inventoryTableWrapper, isGallery);
+    setElementHiddenState(inventoryGallery, !isGallery);
   }
 }
 
