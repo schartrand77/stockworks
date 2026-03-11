@@ -1,10 +1,12 @@
 const state = {
   materials: [],
   inventory: [],
+  inboundInvoices: [],
   hardware: [],
   models: [],
   currentMaterialId: null,
   currentInventoryId: null,
+  currentInboundInvoiceId: null,
   currentMovementItemId: null,
   currentHardwareId: null,
   currentMerchId: null,
@@ -98,6 +100,19 @@ const inventoryClearBtn = document.getElementById("inventory-clear");
 const inventoryRefreshBtn = document.getElementById("inventory-refresh");
 const inventoryDeleteBtn = document.getElementById("inventory-delete");
 const inventoryMaterialScanBtn = document.getElementById("inventory-material-scan");
+const receiptsRefreshBtn = document.getElementById("receipts-refresh");
+const receiptUploadForm = document.getElementById("receipt-upload-form");
+const receiptInvoiceFileInput = document.getElementById("receipt-invoice-file");
+const receiptLocationInput = document.getElementById("receipt-location");
+const receiptReorderLevelInput = document.getElementById("receipt-reorder-level");
+const receiptsTableBody = document.querySelector("#receipts-table tbody");
+const receiptDetailSummary = document.getElementById("receipt-detail-summary");
+const packingSlipForm = document.getElementById("packing-slip-form");
+const receiptPackingSlipFileInput = document.getElementById("receipt-packing-slip-file");
+const receiptVerifyForm = document.getElementById("receipt-verify-form");
+const receiptVerifyLocationInput = document.getElementById("receipt-verify-location");
+const receiptVerifyNoteInput = document.getElementById("receipt-verify-note");
+const receiptLinesTableBody = document.querySelector("#receipt-lines-table tbody");
 
 // Pagination references
 const materialsPrevBtn = document.getElementById("materials-prev");
@@ -614,6 +629,9 @@ function bindEvents() {
   refreshAllBtn.addEventListener("click", refreshAll);
   materialRefreshBtn.addEventListener("click", () => safeAsync(loadMaterials));
   inventoryRefreshBtn.addEventListener("click", () => safeAsync(loadInventory));
+  if (receiptsRefreshBtn) {
+    receiptsRefreshBtn.addEventListener("click", () => safeAsync(loadInboundInvoices));
+  }
   if (modelsRefreshBtn) {
     modelsRefreshBtn.addEventListener("click", () => safeAsync(loadModels));
   }
@@ -678,6 +696,15 @@ function bindEvents() {
 
   materialForm.addEventListener("submit", handleMaterialSubmit);
   inventoryForm.addEventListener("submit", handleInventorySubmit);
+  if (receiptUploadForm) {
+    receiptUploadForm.addEventListener("submit", handleReceiptUploadSubmit);
+  }
+  if (packingSlipForm) {
+    packingSlipForm.addEventListener("submit", handlePackingSlipSubmit);
+  }
+  if (receiptVerifyForm) {
+    receiptVerifyForm.addEventListener("submit", handleReceiptVerifySubmit);
+  }
   hardwareForm.addEventListener("submit", handleHardwareSubmit);
   if (merchForm) {
     merchForm.addEventListener("submit", handleMerchSubmit);
@@ -1074,6 +1101,7 @@ async function refreshAll() {
     await Promise.all([
       loadMaterials({ suppressReports: true }),
       loadInventory({ suppressReports: true }),
+      loadInboundInvoices(),
       loadModels({ suppressReports: true }),
       loadHardware({ suppressReports: true }),
       loadOrderWorksJobs({ silent: true, suppressReports: true }).catch(() => null),
@@ -1147,6 +1175,26 @@ async function loadInventory({ suppressReports = false } = {}) {
   }
   if (!suppressReports) {
     renderReports();
+  }
+}
+
+async function loadInboundInvoices() {
+  const invoices = await api("/inbound-invoices");
+  state.inboundInvoices = asArray(invoices);
+  renderInboundInvoices();
+  if (state.currentInboundInvoiceId) {
+    const active = state.inboundInvoices.find((invoice) => invoice.id === state.currentInboundInvoiceId);
+    if (active) {
+      renderInboundInvoiceDetail(active);
+      return;
+    }
+  }
+  if (state.inboundInvoices.length) {
+    state.currentInboundInvoiceId = state.inboundInvoices[0].id;
+    renderInboundInvoiceDetail(state.inboundInvoices[0]);
+  } else {
+    state.currentInboundInvoiceId = null;
+    renderInboundInvoiceDetail(null);
   }
 }
 
@@ -1898,6 +1946,96 @@ function renderInventory() {
           </td>
         </tr>`;
     })
+    .join("");
+}
+
+function renderInboundInvoices() {
+  if (!receiptsTableBody) {
+    return;
+  }
+  if (!state.inboundInvoices.length) {
+    receiptsTableBody.innerHTML = `<tr><td colspan="7" class="muted">No inbound receipts loaded yet.</td></tr>`;
+    return;
+  }
+  receiptsTableBody.innerHTML = state.inboundInvoices
+    .map((invoice) => {
+      const isSelected = invoice.id === state.currentInboundInvoiceId;
+      return `
+        <tr class="${isSelected ? "is-selected" : ""}">
+          <td>${escapeHtml(formatTimestamp(invoice.uploaded_at))}</td>
+          <td>${escapeHtml(invoice.invoice_number || "-")}</td>
+          <td>${escapeHtml(formatOrderStatus(invoice.status || "-"))}</td>
+          <td>${escapeHtml(invoice.order_number || "-")}</td>
+          <td>${escapeHtml(formatQuantity(invoice.total_expected_grams || 0, "g"))}</td>
+          <td>${escapeHtml(formatQuantity(invoice.total_received_grams || 0, "g"))}</td>
+          <td><button type="button" data-receipt-select="${invoice.id}">Open</button></td>
+        </tr>
+      `;
+    })
+    .join("");
+  receiptsTableBody.querySelectorAll("[data-receipt-select]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const id = Number(button.getAttribute("data-receipt-select"));
+      const invoice = state.inboundInvoices.find((entry) => entry.id === id);
+      if (!invoice) {
+        return;
+      }
+      state.currentInboundInvoiceId = invoice.id;
+      renderInboundInvoices();
+      renderInboundInvoiceDetail(invoice);
+    });
+  });
+}
+
+function renderInboundInvoiceDetail(invoice) {
+  if (!receiptDetailSummary || !receiptLinesTableBody) {
+    return;
+  }
+  if (!invoice) {
+    receiptDetailSummary.innerHTML =
+      '<div class="muted">Select a receipt to review expected lines and verify packing slip quantities.</div>';
+    receiptLinesTableBody.innerHTML = `<tr><td colspan="5" class="muted">Select a receipt first.</td></tr>`;
+    if (receiptVerifyLocationInput) {
+      receiptVerifyLocationInput.value = "Receiving";
+    }
+    return;
+  }
+  receiptDetailSummary.innerHTML = `
+    <div class="receipt-summary">
+      <div><strong>${escapeHtml(invoice.invoice_number)}</strong> · ${escapeHtml(invoice.vendor || "")}</div>
+      <div>Order ${escapeHtml(invoice.order_number || "-")} · Invoice date ${escapeHtml(invoice.invoice_date || "-")}</div>
+      <div>Status ${escapeHtml(formatOrderStatus(invoice.status || ""))} · Expected ${escapeHtml(
+        formatQuantity(invoice.total_expected_grams || 0, "g")
+      )} · Received ${escapeHtml(formatQuantity(invoice.total_received_grams || 0, "g"))}</div>
+      <div>Invoice file ${escapeHtml(invoice.source_filename || "-")} · Packing slip ${escapeHtml(
+        invoice.packing_slip_filename || "not uploaded"
+      )}</div>
+    </div>
+  `;
+  if (receiptVerifyLocationInput) {
+    receiptVerifyLocationInput.value = invoice.expected_location || "Receiving";
+  }
+  receiptLinesTableBody.innerHTML = (invoice.lines || [])
+    .map(
+      (line) => `
+        <tr>
+          <td>${escapeHtml(line.sku || "-")}</td>
+          <td>${escapeHtml(`${line.product_name || ""} ${line.color || ""}`.trim())}</td>
+          <td>${escapeHtml(String(line.expected_quantity ?? 0))}</td>
+          <td>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              data-receipt-line-id="${line.id}"
+              value="${escapeHtml(String(line.received_quantity ?? line.expected_quantity ?? 0))}"
+              ${invoice.verified_at ? "disabled" : ""}
+            />
+          </td>
+          <td>${escapeHtml(formatOrderStatus(line.status || "pending"))}</td>
+        </tr>
+      `
+    )
     .join("");
 }
 
@@ -2746,6 +2884,76 @@ async function handleInventorySubmit(event) {
     console.error(error);
     setMessage(error.message, "error");
   }
+}
+
+async function handleReceiptUploadSubmit(event) {
+  event.preventDefault();
+  if (!receiptInvoiceFileInput?.files?.length) {
+    setMessage("Choose an invoice PDF first.", "error");
+    return;
+  }
+  const formData = new FormData();
+  formData.append("invoice_pdf", receiptInvoiceFileInput.files[0]);
+  formData.append("expected_location", receiptLocationInput?.value || "Receiving");
+  formData.append("reorder_level", receiptReorderLevelInput?.value || "0");
+  await uploadApi("/inbound-invoices/upload", formData);
+  receiptUploadForm.reset();
+  if (receiptLocationInput) {
+    receiptLocationInput.value = "Receiving";
+  }
+  if (receiptReorderLevelInput) {
+    receiptReorderLevelInput.value = "0";
+  }
+  await Promise.all([loadInboundInvoices(), loadMaterials()]);
+  setMessage("Inbound invoice uploaded. Expected inventory is now waiting for packing-slip verification.", "success");
+}
+
+async function handlePackingSlipSubmit(event) {
+  event.preventDefault();
+  if (!state.currentInboundInvoiceId) {
+    setMessage("Select a receipt first.", "error");
+    return;
+  }
+  if (!receiptPackingSlipFileInput?.files?.length) {
+    setMessage("Choose a packing slip PDF first.", "error");
+    return;
+  }
+  const formData = new FormData();
+  formData.append("packing_slip_pdf", receiptPackingSlipFileInput.files[0]);
+  await uploadApi(`/inbound-invoices/${state.currentInboundInvoiceId}/packing-slip`, formData);
+  packingSlipForm.reset();
+  await loadInboundInvoices();
+  setMessage("Packing slip uploaded. Receipt is ready for verification.", "success");
+}
+
+async function handleReceiptVerifySubmit(event) {
+  event.preventDefault();
+  if (!state.currentInboundInvoiceId) {
+    setMessage("Select a receipt first.", "error");
+    return;
+  }
+  const invoice = state.inboundInvoices.find((entry) => entry.id === state.currentInboundInvoiceId);
+  if (!invoice) {
+    setMessage("Selected receipt could not be found.", "error");
+    return;
+  }
+  const lines = Array.from(receiptLinesTableBody.querySelectorAll("[data-receipt-line-id]")).map((input) => ({
+    line_id: Number(input.getAttribute("data-receipt-line-id")),
+    received_quantity: Number(input.value || 0),
+  }));
+  await api(`/inbound-invoices/${state.currentInboundInvoiceId}/verify`, {
+    method: "POST",
+    body: {
+      location: receiptVerifyLocationInput?.value || invoice.expected_location || "Receiving",
+      note: receiptVerifyNoteInput?.value || "",
+      lines,
+    },
+  });
+  if (receiptVerifyNoteInput) {
+    receiptVerifyNoteInput.value = "";
+  }
+  await Promise.all([loadInboundInvoices(), loadInventory(), loadMaterials()]);
+  setMessage("Receipt verified and inventory received.", "success");
 }
 
 async function handleHardwareSubmit(event) {
@@ -4101,6 +4309,48 @@ async function api(path, { method = "GET", body, headers } = {}) {
     return JSON.parse(raw);
   }
   return raw;
+}
+
+async function uploadApi(path, formData, { method = "POST", headers } = {}) {
+  const normalizedMethod = String(method || "POST").toUpperCase();
+  const config = {
+    method: normalizedMethod,
+    headers: {
+      ...(headers || {}),
+    },
+    credentials: "same-origin",
+    body: formData,
+  };
+  if (!["GET", "HEAD", "OPTIONS"].includes(normalizedMethod)) {
+    if (!csrfToken) {
+      throw new Error("CSRF token is missing. Reload the page and try again.");
+    }
+    config.headers["X-CSRF-Token"] = csrfToken;
+  }
+  const response = await fetch(path, config);
+  if (response.status === 401) {
+    window.location.href = "/login";
+    throw new Error("Unauthorized");
+  }
+  const raw = await response.text();
+  if (!response.ok) {
+    let message = raw || `Request failed (${response.status})`;
+    try {
+      const data = raw ? JSON.parse(raw) : null;
+      if (data && typeof data.detail === "string") {
+        message = data.detail;
+      }
+    } catch {
+      // ignore JSON parse errors
+    }
+    const error = new Error(message);
+    error.status = response.status;
+    throw error;
+  }
+  if (!raw) {
+    return null;
+  }
+  return JSON.parse(raw);
 }
 
 function looksLikeHtml(value) {

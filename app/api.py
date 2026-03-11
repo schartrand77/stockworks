@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, List, Optional
 from urllib.parse import urlparse
 
-from fastapi import Depends, FastAPI, Form, Header, HTTPException, Query, Request, status
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -28,6 +28,7 @@ from sqlmodel import Session, func, select
 from starlette.middleware.sessions import SessionMiddleware
 
 from .barcodes import render_barcode_png
+from .bambu_invoice import DEFAULT_SUPPLIER, parse_invoice_pdf, resolve_upload_dir, store_upload
 from .printlab import (
     PrintLabAuthenticationError,
     PrintLabIntegrationError,
@@ -58,6 +59,11 @@ from .models import (
     InventoryItemCreate,
     InventoryItemRead,
     InventoryItemUpdate,
+    InboundInvoice,
+    InboundInvoiceLine,
+    InboundInvoiceLineRead,
+    InboundInvoiceRead,
+    InboundInvoiceVerifyRequest,
     Material,
     MaterialCreate,
     MaterialRead,
@@ -111,6 +117,7 @@ def _parse_origin_list(raw_origins: str) -> list[str]:
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 PUBLIC_DIR = BASE_DIR.parent / "public"
+INBOUND_INVOICE_DIR = resolve_upload_dir(BASE_DIR.parent)
 MANIFEST_FILE = STATIC_DIR / "site.webmanifest"
 SERVICE_WORKER_FILE = STATIC_DIR / "sw.js"
 FAVICON_ICO_FILE = PUBLIC_DIR / "favicon.ico"
@@ -791,6 +798,244 @@ def delete_inventory_item(
     return None
 
 
+@app.get("/inbound-invoices", response_model=List[InboundInvoiceRead])
+def list_inbound_invoices(
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    session: Session = Depends(get_session),
+    _: bool = Depends(require_auth),
+):
+    statement = (
+        select(InboundInvoice)
+        .options(selectinload(InboundInvoice.lines))
+        .order_by(InboundInvoice.uploaded_at.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    invoices = session.exec(statement).all()
+    return [_inbound_invoice_to_read(invoice) for invoice in invoices]
+
+
+@app.get("/inbound-invoices/{invoice_id}", response_model=InboundInvoiceRead)
+def get_inbound_invoice(
+    invoice_id: int,
+    session: Session = Depends(get_session),
+    _: bool = Depends(require_auth),
+):
+    invoice = session.exec(
+        select(InboundInvoice).options(selectinload(InboundInvoice.lines)).where(InboundInvoice.id == invoice_id)
+    ).first()
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Inbound invoice not found")
+    return _inbound_invoice_to_read(invoice)
+
+
+@app.post("/inbound-invoices/upload", response_model=InboundInvoiceRead, status_code=status.HTTP_201_CREATED)
+def upload_inbound_invoice(
+    invoice_pdf: UploadFile = File(...),
+    expected_location: str = Form(default="Receiving"),
+    reorder_level: float = Form(default=0),
+    session: Session = Depends(get_session),
+    _: bool = Depends(require_auth),
+    _csrf: bool = Depends(require_csrf),
+):
+    filename = (invoice_pdf.filename or "").strip()
+    if not filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Invoice upload must be a PDF.")
+    source_filename, stored_path = store_upload(invoice_pdf, INBOUND_INVOICE_DIR, "invoice")
+    try:
+        parsed = parse_invoice_pdf(Path(stored_path))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Unable to parse Bambu invoice PDF: {exc}") from exc
+
+    duplicate = session.exec(
+        select(InboundInvoice).where(
+            InboundInvoice.invoice_number == parsed.invoice_number,
+            InboundInvoice.vendor == (parsed.supplier or DEFAULT_SUPPLIER),
+        )
+    ).first()
+    if duplicate:
+        raise HTTPException(status_code=409, detail=f"Invoice {parsed.invoice_number} has already been uploaded.")
+
+    invoice = InboundInvoice(
+        vendor=parsed.supplier or DEFAULT_SUPPLIER,
+        invoice_number=parsed.invoice_number,
+        order_number=parsed.order_number,
+        invoice_date=parsed.invoice_date,
+        delivery_date=parsed.delivery_date,
+        payment_date=parsed.payment_date,
+        source_filename=source_filename,
+        invoice_file_path=stored_path,
+        status="pending_packing_slip",
+        expected_location=(expected_location or "Receiving").strip() or "Receiving",
+        reorder_level=max(float(reorder_level or 0), 0),
+        total_expected_grams=sum(line.total_grams for line in parsed.lines),
+    )
+    session.add(invoice)
+    session.flush()
+    for parsed_line in parsed.lines:
+        material = _upsert_bambu_material(
+            session,
+            vendor=invoice.vendor,
+            sku=parsed_line.sku,
+            filament_type=parsed_line.filament_type,
+            category=parsed_line.category,
+            color=parsed_line.color,
+            spool_weight_grams=parsed_line.weight_grams,
+            unit_cost_per_gram=parsed_line.unit_cost_per_gram,
+            package_type=parsed_line.package_type,
+            invoice_number=invoice.invoice_number,
+        )
+        line = InboundInvoiceLine(
+            invoice_id=invoice.id,
+            material_id=material.id,
+            sku=parsed_line.sku,
+            product_name=parsed_line.product_name,
+            filament_type=parsed_line.filament_type,
+            category=parsed_line.category,
+            color=parsed_line.color,
+            variant_code=parsed_line.variant_code,
+            package_type=parsed_line.package_type,
+            spool_weight_grams=parsed_line.weight_grams,
+            expected_quantity=parsed_line.quantity,
+            received_quantity=0,
+            unit_cost_per_gram=parsed_line.unit_cost_per_gram,
+            items_subtotal=parsed_line.items_subtotal,
+            tax_name=parsed_line.tax_name,
+            tax_amount=parsed_line.tax_amount,
+            status="pending",
+        )
+        session.add(line)
+    session.commit()
+    session.refresh(invoice)
+    invoice = session.exec(
+        select(InboundInvoice).options(selectinload(InboundInvoice.lines)).where(InboundInvoice.id == invoice.id)
+    ).first()
+    return _inbound_invoice_to_read(invoice)
+
+
+@app.post("/inbound-invoices/{invoice_id}/packing-slip", response_model=InboundInvoiceRead)
+def upload_packing_slip(
+    invoice_id: int,
+    packing_slip_pdf: UploadFile = File(...),
+    session: Session = Depends(get_session),
+    _: bool = Depends(require_auth),
+    _csrf: bool = Depends(require_csrf),
+):
+    invoice = session.exec(
+        select(InboundInvoice).options(selectinload(InboundInvoice.lines)).where(InboundInvoice.id == invoice_id)
+    ).first()
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Inbound invoice not found")
+    if invoice.verified_at:
+        raise HTTPException(status_code=400, detail="Verified inbound invoices cannot be changed.")
+    filename = (packing_slip_pdf.filename or "").strip()
+    if not filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Packing slip upload must be a PDF.")
+    source_filename, stored_path = store_upload(packing_slip_pdf, INBOUND_INVOICE_DIR, "packing-slip")
+    invoice.packing_slip_filename = source_filename
+    invoice.packing_slip_file_path = stored_path
+    invoice.packing_slip_uploaded_at = datetime.utcnow()
+    invoice.status = "ready_for_verification"
+    session.add(invoice)
+    session.commit()
+    session.refresh(invoice)
+    invoice = session.exec(
+        select(InboundInvoice).options(selectinload(InboundInvoice.lines)).where(InboundInvoice.id == invoice.id)
+    ).first()
+    return _inbound_invoice_to_read(invoice)
+
+
+@app.post("/inbound-invoices/{invoice_id}/verify", response_model=InboundInvoiceRead)
+def verify_inbound_invoice(
+    invoice_id: int,
+    payload: InboundInvoiceVerifyRequest,
+    session: Session = Depends(get_session),
+    _: bool = Depends(require_auth),
+    _csrf: bool = Depends(require_csrf),
+):
+    invoice = session.exec(
+        select(InboundInvoice).options(selectinload(InboundInvoice.lines)).where(InboundInvoice.id == invoice_id)
+    ).first()
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Inbound invoice not found")
+    if invoice.verified_at:
+        raise HTTPException(status_code=400, detail="Inbound invoice has already been verified.")
+    if not invoice.packing_slip_file_path:
+        raise HTTPException(status_code=400, detail="Upload a packing slip before verifying receipt.")
+
+    location = (payload.location or invoice.expected_location or "Receiving").strip() or "Receiving"
+    received_lookup = {line.line_id: int(line.received_quantity) for line in payload.lines}
+    total_received_grams = 0.0
+    for line in invoice.lines:
+        received_quantity = max(received_lookup.get(line.id, 0), 0)
+        line.received_quantity = received_quantity
+        if received_quantity == 0:
+            line.status = "missing"
+        elif received_quantity < line.expected_quantity:
+            line.status = "partial"
+        elif received_quantity == line.expected_quantity:
+            line.status = "received"
+        else:
+            line.status = "over_received"
+        material = session.get(Material, line.material_id) if line.material_id else None
+        if material is None:
+            material = _upsert_bambu_material(
+                session,
+                vendor=invoice.vendor,
+                sku=line.sku,
+                filament_type=line.filament_type,
+                category=line.category,
+                color=line.color,
+                spool_weight_grams=line.spool_weight_grams,
+                unit_cost_per_gram=line.unit_cost_per_gram,
+                package_type=line.package_type,
+                invoice_number=invoice.invoice_number,
+            )
+            line.material_id = material.id
+        if received_quantity > 0:
+            inventory_item = _get_or_create_inventory_item_for_receipt(
+                session,
+                material_id=material.id,
+                location=location,
+                reorder_level=invoice.reorder_level,
+            )
+            grams_received = received_quantity * line.spool_weight_grams
+            total_received_grams += grams_received
+            inventory_item.quantity_grams += grams_received
+            movement = StockMovement(
+                inventory_item_id=inventory_item.id,
+                movement_type="incoming",
+                change_grams=grams_received,
+                reference=invoice.invoice_number,
+                note=f"Verified against packing slip for order {invoice.order_number} SKU {line.sku}",
+            )
+            session.add(inventory_item)
+            session.add(movement)
+            cost_entry = MaterialCostHistory(
+                material_id=material.id,
+                unit_cost_per_gram=line.unit_cost_per_gram,
+                vendor=invoice.vendor,
+                reference=invoice.invoice_number,
+                note=f"Verified inbound invoice {invoice.order_number} SKU {line.sku}",
+            )
+            session.add(cost_entry)
+        session.add(line)
+
+    invoice.expected_location = location
+    invoice.total_received_grams = total_received_grams
+    invoice.verification_note = payload.note.strip() if payload.note else None
+    invoice.verified_at = datetime.utcnow()
+    invoice.status = "verified"
+    session.add(invoice)
+    session.commit()
+    session.refresh(invoice)
+    invoice = session.exec(
+        select(InboundInvoice).options(selectinload(InboundInvoice.lines)).where(InboundInvoice.id == invoice.id)
+    ).first()
+    return _inbound_invoice_to_read(invoice)
+
+
 # Stock movement endpoints
 @app.post("/movements", response_model=StockMovementRead, status_code=status.HTTP_201_CREATED)
 def create_stock_movement(
@@ -1306,6 +1551,115 @@ def _ensure_material_exists(session: Session, material_id: int) -> None:
         raise HTTPException(status_code=404, detail="Material not found")
 
 
+def _find_bambu_material(
+    session: Session,
+    *,
+    sku: str,
+    filament_type: str,
+    category: str | None,
+    color: str,
+) -> Material | None:
+    material = session.exec(select(Material).where((Material.barcode == sku) | (Material.refill_barcode == sku))).first()
+    if material:
+        return material
+    return session.exec(
+        select(Material).where(
+            Material.brand == "Bambu Lab",
+            Material.filament_type == filament_type,
+            Material.category == category,
+            Material.color == color,
+        )
+    ).first()
+
+
+def _upsert_bambu_material(
+    session: Session,
+    *,
+    vendor: str,
+    sku: str,
+    filament_type: str,
+    category: str | None,
+    color: str,
+    spool_weight_grams: int,
+    unit_cost_per_gram: float,
+    package_type: str,
+    invoice_number: str,
+) -> Material:
+    material = _find_bambu_material(
+        session,
+        sku=sku,
+        filament_type=filament_type,
+        category=category,
+        color=color,
+    )
+    if material is None:
+        material = Material(
+            name=sku,
+            brand="Bambu Lab",
+            filament_type=filament_type,
+            category=category,
+            color=color,
+            supplier=vendor or DEFAULT_SUPPLIER,
+            price_per_gram=unit_cost_per_gram,
+            spool_weight_grams=spool_weight_grams,
+            notes=f"Created from inbound invoice {invoice_number}",
+        )
+        if package_type.lower() == "refill":
+            material.refill_barcode = sku
+        else:
+            material.barcode = sku
+        session.add(material)
+        session.flush()
+        return material
+
+    material.brand = "Bambu Lab"
+    material.filament_type = filament_type
+    material.category = category
+    material.color = color
+    material.supplier = vendor or DEFAULT_SUPPLIER
+    material.price_per_gram = unit_cost_per_gram
+    material.spool_weight_grams = spool_weight_grams
+    if package_type.lower() == "refill":
+        material.refill_barcode = sku
+    else:
+        material.barcode = sku
+    session.add(material)
+    session.flush()
+    return material
+
+
+def _get_or_create_inventory_item_for_receipt(
+    session: Session,
+    *,
+    material_id: int,
+    location: str,
+    reorder_level: float,
+) -> InventoryItem:
+    item = session.exec(
+        select(InventoryItem).where(
+            InventoryItem.material_id == material_id,
+            InventoryItem.location == location,
+        )
+    ).first()
+    if item:
+        if reorder_level > item.reorder_level:
+            item.reorder_level = reorder_level
+            session.add(item)
+            session.flush()
+        return item
+    item = InventoryItem(
+        material_id=material_id,
+        location=location,
+        quantity_grams=0,
+        reorder_level=reorder_level,
+        spool_serial=None,
+        unit_cost_override=None,
+    )
+    session.add(item)
+    session.flush()
+    return item
+
+
 def _is_loaded_tray(tray: object) -> bool:
     if not isinstance(tray, dict):
         return False
@@ -1639,6 +1993,59 @@ def _material_to_read(material: Material) -> MaterialRead:
         "refill_barcode": material.refill_barcode,
         "notes": material.notes,
     })
+
+
+def _inbound_invoice_to_read(invoice: InboundInvoice) -> InboundInvoiceRead:
+    return InboundInvoiceRead.model_validate(
+        {
+            "id": invoice.id,
+            "vendor": invoice.vendor,
+            "invoice_number": invoice.invoice_number,
+            "order_number": invoice.order_number,
+            "invoice_date": invoice.invoice_date,
+            "delivery_date": invoice.delivery_date,
+            "payment_date": invoice.payment_date,
+            "source_filename": invoice.source_filename,
+            "invoice_file_path": invoice.invoice_file_path,
+            "packing_slip_filename": invoice.packing_slip_filename,
+            "packing_slip_file_path": invoice.packing_slip_file_path,
+            "status": invoice.status,
+            "expected_location": invoice.expected_location,
+            "reorder_level": invoice.reorder_level,
+            "verification_note": invoice.verification_note,
+            "total_expected_grams": invoice.total_expected_grams,
+            "total_received_grams": invoice.total_received_grams,
+            "uploaded_at": invoice.uploaded_at,
+            "packing_slip_uploaded_at": invoice.packing_slip_uploaded_at,
+            "verified_at": invoice.verified_at,
+            "lines": [
+                InboundInvoiceLineRead.model_validate(
+                    {
+                        "id": line.id,
+                        "invoice_id": line.invoice_id,
+                        "material_id": line.material_id,
+                        "sku": line.sku,
+                        "product_name": line.product_name,
+                        "filament_type": line.filament_type,
+                        "category": line.category,
+                        "color": line.color,
+                        "variant_code": line.variant_code,
+                        "package_type": line.package_type,
+                        "spool_weight_grams": line.spool_weight_grams,
+                        "expected_quantity": line.expected_quantity,
+                        "received_quantity": line.received_quantity,
+                        "unit_cost_per_gram": line.unit_cost_per_gram,
+                        "items_subtotal": line.items_subtotal,
+                        "tax_name": line.tax_name,
+                        "tax_amount": line.tax_amount,
+                        "status": line.status,
+                        "note": line.note,
+                    }
+                )
+                for line in sorted(invoice.lines, key=lambda entry: entry.id or 0)
+            ],
+        }
+    )
 
 
 def _ensure_unique_material_name(session: Session, name: str) -> str:

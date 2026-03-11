@@ -1220,6 +1220,10 @@ tbody tr:hover {
   background: var(--sap-surface-alt);
 }
 
+tbody tr.is-selected {
+  background: var(--sap-primary-soft);
+}
+
 tbody tr.is-highlighted {
   background: rgba(255, 199, 62, 0.22);
 }
@@ -1240,6 +1244,11 @@ th:last-child {
   border: 1px solid var(--sap-border);
   border-radius: 12px;
   background: var(--sap-surface-muted);
+}
+
+.receipt-summary {
+  display: grid;
+  gap: 0.35rem;
 }
 
 .note-title {

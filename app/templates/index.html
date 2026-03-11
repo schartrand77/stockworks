@@ -54,6 +54,17 @@
           </button>
           <button
             class="tab-button"
+            id="tab-receipts"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            aria-controls="receipts-panel"
+            data-tab-target="receipts-panel"
+          >
+            Receipts
+          </button>
+          <button
+            class="tab-button"
             id="tab-models"
             type="button"
             role="tab"
@@ -412,6 +423,96 @@
               <span class="pagination-page" id="inventory-page">Page 1 of 1</span>
               <button type="button" id="inventory-next">Next</button>
             </div>
+          </div>
+        </div>
+        </section>
+
+        <section class="card tab-panel" id="receipts-panel" role="tabpanel" aria-labelledby="tab-receipts" hidden>
+        <div class="card-header">
+          <div>
+            <h2>Inbound Receipts</h2>
+            <p>Upload supplier invoices, create expected inventory, then verify against a received packing slip.</p>
+          </div>
+          <div class="card-actions">
+            <button id="receipts-refresh" type="button">Refresh receipts</button>
+          </div>
+        </div>
+        <div class="card-body two-columns" id="receipts-body">
+          <form id="receipt-upload-form" class="stack" enctype="multipart/form-data">
+            <label>
+              Bambu invoice PDF
+              <input type="file" id="receipt-invoice-file" accept="application/pdf,.pdf" required />
+            </label>
+            <label>
+              Expected location
+              <input type="text" id="receipt-location" value="Receiving" />
+            </label>
+            <label>
+              Reorder level (grams)
+              <input type="number" id="receipt-reorder-level" min="0" step="0.01" value="0" />
+            </label>
+            <button type="submit">Upload invoice</button>
+          </form>
+          <div class="stack">
+            <div class="table-wrapper">
+              <table id="receipts-table">
+                <thead>
+                  <tr>
+                    <th>Uploaded</th>
+                    <th>Invoice</th>
+                    <th>Status</th>
+                    <th>Order</th>
+                    <th>Expected</th>
+                    <th>Received</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td colspan="7" class="muted">No inbound receipts loaded yet.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div id="receipt-detail" class="note-box">
+              <div id="receipt-detail-summary" class="muted">Select a receipt to review expected lines and verify packing slip quantities.</div>
+            </div>
+            <form id="packing-slip-form" class="stack" enctype="multipart/form-data">
+              <label>
+                Packing slip PDF
+                <input type="file" id="receipt-packing-slip-file" accept="application/pdf,.pdf" />
+              </label>
+              <button type="submit">Upload packing slip</button>
+            </form>
+            <form id="receipt-verify-form" class="stack">
+              <label>
+                Receive into location
+                <input type="text" id="receipt-verify-location" value="Receiving" />
+              </label>
+              <label class="full-width">
+                Verification note
+                <textarea id="receipt-verify-note" rows="2" placeholder="Optional discrepancy note"></textarea>
+              </label>
+              <div class="table-wrapper">
+                <table id="receipt-lines-table">
+                  <thead>
+                    <tr>
+                      <th>SKU</th>
+                      <th>Material</th>
+                      <th>Expected qty</th>
+                      <th>Received qty</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td colspan="5" class="muted">Select a receipt first.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <button type="submit">Verify receipt</button>
+            </form>
           </div>
         </div>
         </section>

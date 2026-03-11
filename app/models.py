@@ -133,6 +133,85 @@ class InventoryItemRead(InventoryItemBase):
     material: Optional[MaterialRead]
 
 
+class InboundInvoiceBase(SQLModel):
+    vendor: str = Field(index=True)
+    invoice_number: str = Field(index=True)
+    order_number: Optional[str] = Field(default=None, index=True)
+    invoice_date: Optional[str] = None
+    delivery_date: Optional[str] = None
+    payment_date: Optional[str] = None
+    source_filename: Optional[str] = None
+    invoice_file_path: Optional[str] = None
+    packing_slip_filename: Optional[str] = None
+    packing_slip_file_path: Optional[str] = None
+    status: str = Field(default="pending_packing_slip", index=True)
+    expected_location: str = Field(default="Receiving")
+    reorder_level: float = Field(default=0, ge=0)
+    verification_note: Optional[str] = None
+    total_expected_grams: float = Field(default=0, ge=0)
+    total_received_grams: float = Field(default=0, ge=0)
+
+
+class InboundInvoice(InboundInvoiceBase, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    uploaded_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    packing_slip_uploaded_at: Optional[datetime] = Field(default=None, index=True)
+    verified_at: Optional[datetime] = Field(default=None, index=True)
+
+    lines: List["InboundInvoiceLine"] = Relationship(back_populates="invoice")
+
+
+class InboundInvoiceLineBase(SQLModel):
+    invoice_id: int = Field(foreign_key="inboundinvoice.id")
+    material_id: Optional[int] = Field(default=None, foreign_key="material.id")
+    sku: str = Field(index=True)
+    product_name: str
+    filament_type: str
+    category: Optional[str] = None
+    color: str
+    variant_code: Optional[str] = None
+    package_type: str
+    spool_weight_grams: int = Field(gt=0)
+    expected_quantity: int = Field(ge=0)
+    received_quantity: int = Field(default=0, ge=0)
+    unit_cost_per_gram: float = Field(gt=0)
+    items_subtotal: float = Field(ge=0)
+    tax_name: Optional[str] = None
+    tax_amount: float = Field(default=0, ge=0)
+    status: str = Field(default="pending", index=True)
+    note: Optional[str] = None
+
+
+class InboundInvoiceLine(InboundInvoiceLineBase, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+
+    invoice: Optional[InboundInvoice] = Relationship(back_populates="lines")
+    material: Optional[Material] = Relationship()
+
+
+class InboundInvoiceLineRead(InboundInvoiceLineBase):
+    id: int
+
+
+class InboundInvoiceRead(InboundInvoiceBase):
+    id: int
+    uploaded_at: datetime
+    packing_slip_uploaded_at: Optional[datetime] = None
+    verified_at: Optional[datetime] = None
+    lines: List[InboundInvoiceLineRead] = Field(default_factory=list)
+
+
+class InboundInvoiceVerifyLine(SQLModel):
+    line_id: int
+    received_quantity: int = Field(ge=0)
+
+
+class InboundInvoiceVerifyRequest(SQLModel):
+    location: Optional[str] = None
+    note: Optional[str] = None
+    lines: List[InboundInvoiceVerifyLine]
+
+
 class StockMovementBase(SQLModel):
     movement_type: str = Field(description="incoming, outgoing, or adjustment")
     change_grams: float = Field(description="Positive for inbound, negative for outbound")

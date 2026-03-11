@@ -9,3 +9,4 @@ itsdangerous==2.2.0
 httpx==0.28.1
 Pillow==11.1.0
 python-barcode==0.15.1
+pypdf==6.8.0
