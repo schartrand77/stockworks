@@ -57,6 +57,24 @@ def _strip_schema_parameter(database_url: str) -> Tuple[str, Optional[str]]:
     return urlunparse(parsed._replace(query=new_query)), schema
 
 
+def _resolve_stockworks_schema(database_url_schema: Optional[str]) -> Optional[str]:
+    """Choose the schema for StockWorks-owned tables.
+
+    OrderWorks reads its jobs from the fully qualified ``orderworks.jobs`` table,
+    so a shared DATABASE_URL ending in ``?schema=orderworks`` should not redirect
+    StockWorks materials/inventory into that schema. Use STOCKWORKS_DB_SCHEMA to
+    opt into a custom schema explicitly.
+    """
+    explicit_schema = os.environ.get("STOCKWORKS_DB_SCHEMA")
+    if explicit_schema is not None:
+        schema = explicit_schema.strip()
+        return schema or None
+    schema = (database_url_schema or "").strip()
+    if not schema or schema.lower() == "orderworks":
+        return None
+    return schema
+
+
 def _configure_sqlite_connection(db_engine, database_url: str) -> None:
     if not database_url.startswith("sqlite"):
         return
@@ -73,11 +91,11 @@ def _configure_sqlite_connection(db_engine, database_url: str) -> None:
 def create_db_engine():
     global DB_SCHEMA
     database_url = _build_database_url()
-    database_url, schema = _strip_schema_parameter(database_url)
-    DB_SCHEMA = schema
+    database_url, database_url_schema = _strip_schema_parameter(database_url)
+    DB_SCHEMA = _resolve_stockworks_schema(database_url_schema)
     connect_args = {"check_same_thread": False} if database_url.startswith("sqlite") else {}
-    if schema and not database_url.startswith("sqlite"):
-        schema_option = f"-c search_path={schema}"
+    if DB_SCHEMA and not database_url.startswith("sqlite"):
+        schema_option = f"-c search_path={DB_SCHEMA}"
         existing_options = connect_args.get("options")
         connect_args["options"] = f"{existing_options} {schema_option}".strip() if existing_options else schema_option
     engine = create_engine(database_url, connect_args=connect_args)
