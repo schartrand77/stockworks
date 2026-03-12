@@ -3812,7 +3812,13 @@ function updatePaginationControls({ total, startIndex, endIndex, maxPage, pageSt
   if (infoEl) {
     const startLabel = total ? startIndex + 1 : 0;
     const endLabel = total ? endIndex : 0;
-    infoEl.textContent = `Showing ${startLabel}-${endLabel} of ${total}`;
+    if (!total) {
+      infoEl.textContent = "No items";
+    } else if (maxPage === 1) {
+      infoEl.textContent = `Showing all ${total} item${total === 1 ? "" : "s"}`;
+    } else {
+      infoEl.textContent = `Items ${startLabel}-${endLabel} of ${total}`;
+    }
   }
   if (pageEl) {
     pageEl.textContent = `Page ${pageState.page} of ${maxPage}`;
