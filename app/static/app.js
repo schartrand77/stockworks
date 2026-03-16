@@ -4024,15 +4024,27 @@ async function openBarcodeScanner({ title, onDetected }) {
     return;
   }
   if (!window.isSecureContext) {
-    setMessage("Camera access requires HTTPS (or localhost).", "error");
+    openBarcodeEntryFallback({
+      title,
+      onDetected,
+      reason: "Camera access requires HTTPS (or localhost).",
+    });
     return;
   }
   if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function") {
-    setMessage("Camera access is not supported on this device.", "error");
+    openBarcodeEntryFallback({
+      title,
+      onDetected,
+      reason: "Camera access is not supported on this device.",
+    });
     return;
   }
   if (typeof BarcodeDetector !== "function" || typeof createImageBitmap !== "function") {
-    setMessage("Barcode scanning is not supported in this browser.", "error");
+    openBarcodeEntryFallback({
+      title,
+      onDetected,
+      reason: "Barcode scanning is not supported in this browser.",
+    });
     return;
   }
 
@@ -4665,6 +4677,28 @@ function loadStoredFilamentViewMode(section) {
     return normalizeFilamentViewMode(stored || "gallery");
   } catch {
     return "gallery";
+  }
+}
+
+function openBarcodeEntryFallback({ title, onDetected, reason }) {
+  const entered = window.prompt(
+    `${title || "Scan barcode"}\n\n${reason}\n\nScan with a handheld scanner or paste/type the barcode value:`
+  );
+  const value = String(entered || "").trim();
+  if (!value) {
+    if (reason) {
+      setMessage(reason, "error");
+    }
+    return;
+  }
+  try {
+    if (typeof onDetected === "function") {
+      onDetected(value);
+    }
+    setMessage(`Barcode captured: ${value}`, "success");
+  } catch (error) {
+    console.error("Fallback barcode handler failed:", error);
+    setMessage("Unable to process the entered barcode.", "error");
   }
 }
 
