@@ -1003,9 +1003,12 @@
           <form id="movement-form" class="stack">
             <label>
               Inventory item
-              <select id="movement-inventory" required>
-                <option value="">Select inventory item...</option>
-              </select>
+              <div class="scan-field">
+                <select id="movement-inventory" required>
+                  <option value="">Select inventory item...</option>
+                </select>
+                <button type="button" id="movement-inventory-scan" class="scan-button">Scan</button>
+              </div>
             </label>
             <label>
               Movement type

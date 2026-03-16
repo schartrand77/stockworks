@@ -31,7 +31,7 @@ StockWorks can scan barcodes using your phone or tablet camera.
 
 How it works:
 - Open StockWorks on your mobile browser.
-- In the Materials or Inventory forms, tap the barcode scan button.
+- In the Materials, Inventory, or Stock Movements forms, tap the barcode scan button.
 - Grant camera access when prompted.
 - Point the camera at the barcode; the value fills in automatically.
 

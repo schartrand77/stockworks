@@ -222,6 +222,7 @@ const modelMovementTableBody = document.querySelector("#model-movement-table tbo
 // Movements
 const movementForm = document.getElementById("movement-form");
 const movementInventorySelect = document.getElementById("movement-inventory");
+const movementInventoryScanBtn = document.getElementById("movement-inventory-scan");
 const movementTypeSelect = document.getElementById("movement-type");
 const movementChangeInput = document.getElementById("movement-change");
 const movementReferenceInput = document.getElementById("movement-reference");
@@ -1003,6 +1004,33 @@ function bindEvents() {
           const hexLabel = materialHexes.length ? materialHexes.join(" / ") : "";
           const materialLabel = `${material.name} (${material.color}${hexLabel ? ` • ${hexLabel}` : ""})`;
           setMessage(`Material found for ${materialLabel}. No inventory entry yet.`, "info");
+        },
+      });
+    });
+  }
+  if (movementInventoryScanBtn) {
+    bindTap(movementInventoryScanBtn, () => {
+      openBarcodeScanner({
+        title: "Scan inventory barcode",
+        onDetected: async (value) => {
+          if (!state.inventory.length) {
+            await loadInventory();
+          }
+          const inventoryMatches = findInventoryByBarcode(value);
+          if (!inventoryMatches.length) {
+            setMessage(`No inventory item found for barcode ${value}.`, "error");
+            return;
+          }
+          const match = inventoryMatches[0];
+          startMovementEntry(match.id);
+          highlightInventoryRow(match.id);
+          const materialHexes = materialHexesForDisplay(match.material);
+          const hexLabel = materialHexes.length ? materialHexes.join(" / ") : "";
+          const materialLabel = match.material
+            ? `${match.material.name} (${match.material.color}${hexLabel ? ` - ${hexLabel}` : ""})`
+            : `Item ${match.id}`;
+          const extra = inventoryMatches.length > 1 ? " Multiple matches found; showing the first." : "";
+          setMessage(`Selected inventory for ${materialLabel}.${extra}`, "success");
         },
       });
     });
@@ -3227,9 +3255,19 @@ function startInventoryEdit(id) {
   inventoryFields.reorder_level.value = item.reorder_level;
   inventoryFields.spool_serial.value = item.spool_serial || "";
   inventoryFields.unit_cost_override.value = item.unit_cost_override ?? "";
+  startMovementEntry(id, { focusChange: false });
+}
+
+function startMovementEntry(id, { focusChange = true } = {}) {
+  const item = state.inventory.find((i) => i.id === id);
+  if (!item) return;
   movementInventorySelect.value = String(id);
   state.currentMovementItemId = id;
   safeAsync(() => loadMovements(id));
+  if (focusChange && movementChangeInput) {
+    movementChangeInput.focus();
+    movementChangeInput.select();
+  }
 }
 
 function highlightInventoryRow(id) {
