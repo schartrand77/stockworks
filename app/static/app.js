@@ -304,6 +304,7 @@ const DEFAULT_BARCODE_FORMATS = [
   "itf",
   "qr_code",
 ];
+const ZXING_SCRIPT_URL = "https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js";
 
 const scannerState = {
   active: false,
@@ -311,7 +312,10 @@ const scannerState = {
   stream: null,
   rafId: null,
   onDetected: null,
+  zxingReader: null,
+  mode: null,
 };
+let zxingLibraryPromise = null;
 
 const THEME_STORAGE_KEY = "stockworks-theme";
 const FILAMENT_VIEW_STORAGE_KEY_PREFIX = "stockworks-filament-view-";
@@ -4039,26 +4043,7 @@ async function openBarcodeScanner({ title, onDetected }) {
     });
     return;
   }
-  if (typeof BarcodeDetector !== "function" || typeof createImageBitmap !== "function") {
-    openBarcodeEntryFallback({
-      title,
-      onDetected,
-      reason: "Barcode scanning is not supported in this browser.",
-    });
-    return;
-  }
-
-  let detector = null;
-  try {
-    detector = new BarcodeDetector({ formats: DEFAULT_BARCODE_FORMATS });
-  } catch (error) {
-    console.error("Barcode detector initialization failed:", error);
-    setMessage("Barcode detector is unavailable.", "error");
-    return;
-  }
-
   scannerState.active = true;
-  scannerState.detector = detector;
   scannerState.onDetected = onDetected;
   if (scannerTitleEl) {
     scannerTitleEl.textContent = title || "Scan barcode";
@@ -4069,18 +4054,112 @@ async function openBarcodeScanner({ title, onDetected }) {
   scannerOverlay.hidden = false;
 
   try {
-    scannerState.stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: "environment" } },
-      audio: false,
-    });
-    scannerVideo.srcObject = scannerState.stream;
-    await scannerVideo.play();
-    startBarcodeScanLoop();
+    if (typeof BarcodeDetector === "function" && typeof createImageBitmap === "function") {
+      scannerState.detector = new BarcodeDetector({ formats: DEFAULT_BARCODE_FORMATS });
+      scannerState.mode = "barcode-detector";
+      scannerState.stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" } },
+        audio: false,
+      });
+      scannerVideo.srcObject = scannerState.stream;
+      await scannerVideo.play();
+      startBarcodeScanLoop();
+      return;
+    }
+
+    await startZxingScanner();
   } catch (error) {
     console.error("Camera access failed:", error);
-    setMessage("Unable to access the camera.", "error");
+    openBarcodeEntryFallback({
+      title,
+      onDetected,
+      reason: "Unable to start camera barcode scanning in this browser.",
+    });
     closeBarcodeScanner({ silent: true });
   }
+}
+
+async function startZxingScanner() {
+  const ZXing = await loadZxingLibrary();
+  if (!ZXing || typeof ZXing.BrowserMultiFormatReader !== "function") {
+    throw new Error("ZXing library unavailable");
+  }
+  const hints = new Map();
+  if (ZXing.DecodeHintType && ZXing.BarcodeFormat) {
+    const formats = [
+      ZXing.BarcodeFormat.CODE_128,
+      ZXing.BarcodeFormat.CODE_39,
+      ZXing.BarcodeFormat.CODE_93,
+      ZXing.BarcodeFormat.EAN_13,
+      ZXing.BarcodeFormat.EAN_8,
+      ZXing.BarcodeFormat.UPC_A,
+      ZXing.BarcodeFormat.UPC_E,
+      ZXing.BarcodeFormat.ITF,
+      ZXing.BarcodeFormat.QR_CODE,
+    ].filter(Boolean);
+    if (formats.length) {
+      hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, formats);
+    }
+  }
+
+  const reader = new ZXing.BrowserMultiFormatReader(hints, 300);
+  scannerState.zxingReader = reader;
+  scannerState.mode = "zxing";
+  await reader.decodeFromConstraints(
+    { video: { facingMode: { ideal: "environment" } }, audio: false },
+    scannerVideo,
+    (result, error, controls) => {
+      if (!scannerState.active || scannerState.mode !== "zxing") {
+        if (controls && typeof controls.stop === "function") {
+          controls.stop();
+        }
+        return;
+      }
+      if (result) {
+        const value = String(result.text || "").trim();
+        if (!value) {
+          return;
+        }
+        const handler = scannerState.onDetected;
+        closeBarcodeScanner({ silent: true });
+        if (handler) {
+          Promise.resolve(handler(value)).catch((handlerError) => {
+            console.error("Barcode handler failed:", handlerError);
+            setMessage("Unable to process the scanned barcode.", "error");
+          });
+        }
+        return;
+      }
+      if (error && scannerStatusEl) {
+        scannerStatusEl.textContent = "Point the camera at a barcode.";
+      }
+    }
+  );
+}
+
+async function loadZxingLibrary() {
+  if (window.ZXing && typeof window.ZXing.BrowserMultiFormatReader === "function") {
+    return window.ZXing;
+  }
+  if (!zxingLibraryPromise) {
+    zxingLibraryPromise = new Promise((resolve, reject) => {
+      const existing = document.querySelector(`script[data-zxing-script="true"]`);
+      if (existing) {
+        existing.addEventListener("load", () => resolve(window.ZXing));
+        existing.addEventListener("error", () => reject(new Error("Unable to load ZXing")));
+        return;
+      }
+      const script = document.createElement("script");
+      script.src = ZXING_SCRIPT_URL;
+      script.async = true;
+      script.defer = true;
+      script.dataset.zxingScript = "true";
+      script.onload = () => resolve(window.ZXing);
+      script.onerror = () => reject(new Error("Unable to load ZXing"));
+      document.head.appendChild(script);
+    });
+  }
+  return zxingLibraryPromise;
 }
 
 function startBarcodeScanLoop() {
@@ -4141,6 +4220,10 @@ function closeBarcodeScanner({ silent = false } = {}) {
     scannerState.stream.getTracks().forEach((track) => track.stop());
     scannerState.stream = null;
   }
+  if (scannerState.zxingReader && typeof scannerState.zxingReader.reset === "function") {
+    scannerState.zxingReader.reset();
+    scannerState.zxingReader = null;
+  }
   if (scannerVideo) {
     scannerVideo.pause();
     scannerVideo.srcObject = null;
@@ -4149,6 +4232,7 @@ function closeBarcodeScanner({ silent = false } = {}) {
     scannerOverlay.hidden = true;
   }
   scannerState.detector = null;
+  scannerState.mode = null;
   if (!silent && scannerStatusEl) {
     scannerStatusEl.textContent = "Scanner closed.";
   }
