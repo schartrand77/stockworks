@@ -1294,6 +1294,10 @@ th:last-child {
   gap: 0.9rem;
 }
 
+.ams-printer-card.is-offline {
+  opacity: 0.9;
+}
+
 .ams-printer-header {
   display: flex;
   justify-content: space-between;

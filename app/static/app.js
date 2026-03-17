@@ -2707,11 +2707,25 @@ function renderBambuView() {
     return;
   }
   if (!state.bambuViewConfigured) {
-    bambuViewGrid.innerHTML = `<div class="ams-empty-state muted">Configure PRINTLAB_* settings to sync loaded filaments.</div>`;
+    bambuViewGrid.innerHTML = renderBambuViewPlaceholder({
+      printerName: "PrintLab not configured",
+      detail: "Set PRINTLAB_BASE_URL and refresh to load AMS trays.",
+      countLabel: "Offline",
+      slotState: "Offline",
+      slotLabel: "Waiting for config",
+      slotMeta: "No live printer data yet.",
+    });
     return;
   }
   if (state.bambuViewError) {
-    bambuViewGrid.innerHTML = `<div class="ams-empty-state muted">${escapeHtml(state.bambuViewError)}</div>`;
+    bambuViewGrid.innerHTML = renderBambuViewPlaceholder({
+      printerName: "PrintLab offline",
+      detail: "Unable to reach the configured PrintLab endpoint.",
+      countLabel: "Offline",
+      slotState: "Offline",
+      slotLabel: "Waiting for printer data",
+      slotMeta: "Start PrintLab on port 8080 or update PRINTLAB_BASE_URL.",
+    });
     return;
   }
 
@@ -2785,14 +2799,68 @@ function renderBambuView() {
     `);
   }
   if (!cards.length && state.bambuViewPrinters.length) {
-    bambuViewGrid.innerHTML = `<div class="ams-empty-state muted">No printer details reported by PrintLab.</div>`;
+    bambuViewGrid.innerHTML = renderBambuViewPlaceholder({
+      printerName: "No printer details",
+      detail: "PrintLab responded, but no AMS slot data was included.",
+      countLabel: "0 trays",
+      slotState: "Empty",
+      slotLabel: "No AMS data",
+      slotMeta: "The printer response did not include tray details.",
+    });
     return;
   }
   if (!cards.length) {
-    bambuViewGrid.innerHTML = `<div class="ams-empty-state muted">No PrintLab data loaded yet.</div>`;
+    bambuViewGrid.innerHTML = renderBambuViewPlaceholder({
+      printerName: "No PrintLab data yet",
+      detail: "Refresh once the integration is online.",
+      countLabel: "0 trays",
+      slotState: "Empty",
+      slotLabel: "No spool loaded",
+      slotMeta: "AMS data will appear here when available.",
+    });
     return;
   }
   bambuViewGrid.innerHTML = cards.join("");
+}
+
+function renderBambuViewPlaceholder({
+  printerName = "Printer unavailable",
+  detail = "",
+  countLabel = "Offline",
+  slotState = "Empty",
+  slotLabel = "No spool loaded",
+  slotMeta = "No AMS data available.",
+} = {}) {
+  const slots = Array.from({ length: 4 }, (_, index) => `
+    <div class="ams-slot is-empty">
+      <div class="ams-slot-header">
+        <span class="ams-slot-label">A1 S${index + 1}</span>
+        <span class="ams-slot-state">${escapeHtml(slotState)}</span>
+      </div>
+      <div class="ams-slot-spool">
+        <div class="ams-slot-core"></div>
+      </div>
+      <div class="ams-slot-name">${escapeHtml(slotLabel)}</div>
+      <div class="ams-slot-meta">${escapeHtml(slotMeta)}</div>
+    </div>
+  `).join("");
+  return `
+    <article class="ams-printer-card is-offline">
+      <div class="ams-printer-header">
+        <div>
+          <h4>${escapeHtml(printerName)}</h4>
+          <p>${escapeHtml(detail)}</p>
+        </div>
+        <div class="ams-printer-count">${escapeHtml(countLabel)}</div>
+      </div>
+      <div class="ams-unit-list">
+        <section class="ams-unit">
+          <div class="ams-unit-title">AMS 1</div>
+          <div class="ams-slot-grid">${slots}</div>
+        </section>
+      </div>
+    </article>
+  `;
 }
 
 function renderMovements(movements) {
