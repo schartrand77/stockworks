@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 from typing import Any, Dict, List, Optional
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 
 import httpx
 
@@ -36,18 +36,21 @@ class PrintLabClient:
         self.api_auth_header = (api_auth_header or "").strip() or "X-API-Key"
         self.bearer_token = (bearer_token or "").strip()
         self._timeout = timeout
-        self._client: Optional[httpx.Client] = None
+        self._clients: Dict[str, httpx.Client] = {}
 
     @property
     def is_configured(self) -> bool:
         return bool(self.base_url)
 
-    def _get_client(self) -> httpx.Client:
-        if self._client is None:
-            if not self.base_url:
-                raise PrintLabNotConfiguredError("PrintLab base URL is not configured.")
-            self._client = httpx.Client(base_url=self.base_url, timeout=self._timeout, follow_redirects=True)
-        return self._client
+    def _get_client(self, base_url: Optional[str] = None) -> httpx.Client:
+        resolved_base_url = (base_url or self.base_url or "").rstrip("/")
+        if not resolved_base_url:
+            raise PrintLabNotConfiguredError("PrintLab base URL is not configured.")
+        client = self._clients.get(resolved_base_url)
+        if client is None:
+            client = httpx.Client(base_url=resolved_base_url, timeout=self._timeout, follow_redirects=True)
+            self._clients[resolved_base_url] = client
+        return client
 
     def _build_request_headers(self, headers: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         merged: Dict[str, Any] = {}
@@ -59,16 +62,64 @@ class PrintLabClient:
             merged["Authorization"] = f"Bearer {self.bearer_token}"
         return merged
 
+    def _build_alternate_base_url(self) -> Optional[str]:
+        parsed = urlparse(self.base_url)
+        hostname = (parsed.hostname or "").strip().lower()
+        if not hostname:
+            return None
+        if hostname == "host.docker.internal":
+            alternate_host = "localhost"
+        elif hostname in {"localhost", "127.0.0.1"}:
+            alternate_host = "host.docker.internal"
+        else:
+            return None
+        netloc = alternate_host
+        if parsed.port is not None:
+            netloc = f"{alternate_host}:{parsed.port}"
+        return urlunparse(parsed._replace(netloc=netloc))
+
+    def _candidate_base_urls(self) -> List[str]:
+        primary = (self.base_url or "").rstrip("/")
+        if not primary:
+            return []
+        candidates = [primary]
+        alternate = self._build_alternate_base_url()
+        if alternate:
+            alternate = alternate.rstrip("/")
+            if alternate and alternate not in candidates:
+                candidates.append(alternate)
+        return candidates
+
+    def _format_connect_error(self, attempted_urls: List[str], exc: httpx.HTTPError) -> str:
+        attempted = ", ".join(attempted_urls) if attempted_urls else self.base_url
+        return (
+            f"Failed to contact PrintLab. Tried: {attempted}. "
+            "If StockWorks is running on localhost, set PRINTLAB_BASE_URL to http://localhost:8080. "
+            f"Original error: {exc}"
+        )
+
     def _request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
         if not self.is_configured:
             raise PrintLabNotConfiguredError("PrintLab integration is not configured.")
-        client = self._get_client()
         kwargs["headers"] = self._build_request_headers(kwargs.get("headers"))
-        try:
-            response = client.request(method, path, **kwargs)
-        except httpx.HTTPError as exc:
-            raise PrintLabIntegrationError(f"Failed to contact PrintLab: {exc}") from exc
-        return response
+        attempted_urls: List[str] = []
+        last_exc: Optional[httpx.HTTPError] = None
+        for candidate_base_url in self._candidate_base_urls():
+            attempted_urls.append(candidate_base_url)
+            client = self._get_client(candidate_base_url)
+            try:
+                response = client.request(method, path, **kwargs)
+                if candidate_base_url != self.base_url:
+                    self.base_url = candidate_base_url
+                return response
+            except httpx.ConnectError as exc:
+                last_exc = exc
+                continue
+            except httpx.HTTPError as exc:
+                raise PrintLabIntegrationError(f"Failed to contact PrintLab: {exc}") from exc
+        if last_exc is not None:
+            raise PrintLabIntegrationError(self._format_connect_error(attempted_urls, last_exc)) from last_exc
+        raise PrintLabIntegrationError("Failed to contact PrintLab.")
 
     def _format_http_status_error(self, exc: httpx.HTTPStatusError, operation: str) -> str:
         response = exc.response

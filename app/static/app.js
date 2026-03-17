@@ -253,7 +253,7 @@ const reportOrderworksStatusEl = document.getElementById("report-orderworks-stat
 const reportOrderworksRevenueEl = document.getElementById("report-orderworks-revenue");
 const bambuViewRefreshBtn = document.getElementById("bambu-view-refresh");
 const bambuViewStatusEl = document.getElementById("bambu-view-status");
-const bambuViewTableBody = document.querySelector("#bambu-view-table tbody");
+const bambuViewGrid = document.getElementById("bambu-view-grid");
 const installButton = document.getElementById("install-app");
 let themeToggleBtn = null;
 let themeToggleLabelEl = null;
@@ -1333,7 +1333,7 @@ async function syncMakerWorksMerch() {
 }
 
 async function loadBambuViewFilaments({ silent = false } = {}) {
-  const shouldFetch = bambuViewTableBody || bambuViewStatusEl;
+  const shouldFetch = bambuViewGrid || bambuViewStatusEl;
   if (!shouldFetch) {
     return;
   }
@@ -2703,72 +2703,96 @@ function renderBambuView() {
     }
   }
 
-  if (!bambuViewTableBody) {
+  if (!bambuViewGrid) {
     return;
   }
   if (!state.bambuViewConfigured) {
-    bambuViewTableBody.innerHTML = `<tr><td colspan="6" class="muted">Configure PRINTLAB_* settings to sync loaded filaments.</td></tr>`;
+    bambuViewGrid.innerHTML = `<div class="ams-empty-state muted">Configure PRINTLAB_* settings to sync loaded filaments.</div>`;
     return;
   }
   if (state.bambuViewError) {
-    bambuViewTableBody.innerHTML = `<tr><td colspan="6" class="muted">${escapeHtml(state.bambuViewError)}</td></tr>`;
+    bambuViewGrid.innerHTML = `<div class="ams-empty-state muted">${escapeHtml(state.bambuViewError)}</div>`;
     return;
   }
 
-  const rows = [];
+  const cards = [];
   for (const printer of state.bambuViewPrinters) {
     const loaded = Array.isArray(printer.loaded_trays) ? printer.loaded_trays : [];
-    if (!loaded.length) {
-      const slotCount = Number(printer.ams_slots);
-      const unitCount = Number(printer.ams_units);
-      const hints = [];
-      if (Number.isFinite(slotCount)) {
-        hints.push(`slots: ${slotCount}`);
-      }
-      if (Number.isFinite(unitCount)) {
-        hints.push(`units: ${unitCount}`);
-      }
-      const stateLabel = hints.length ? `No loaded trays (${hints.join(", ")})` : "No loaded trays";
-      rows.push(`
-        <tr>
-          <td>${escapeHtml(printer.printer_name || printer.printer_id || "Printer")}</td>
-          <td><span class="muted">-</span></td>
-          <td><span class="muted">-</span></td>
-          <td><span class="muted">-</span></td>
-          <td><span class="muted">-</span></td>
-          <td><span class="muted">${escapeHtml(stateLabel)}</span></td>
-        </tr>
-      `);
-      continue;
-    }
+    const traysByPosition = new Map();
+    let maxUnit = 0;
+    let maxSlot = 0;
     for (const tray of loaded) {
-      const position =
-        Number.isFinite(Number(tray.unit)) && Number.isFinite(Number(tray.slot)) ? `U${tray.unit} S${tray.slot}` : "-";
-      const trayHexes = resolveColorHexes(tray.colors, tray.color);
-      const colorLabel = trayHexes.length
-        ? formatColorChip("", tray.color, trayHexes)
-        : `<span class="muted">-</span>`;
-      rows.push(`
-        <tr>
-          <td>${escapeHtml(printer.printer_name || printer.printer_id || "Printer")}</td>
-          <td>${escapeHtml(position)}</td>
-          <td>${escapeHtml(tray.material || "-")}</td>
-          <td>${escapeHtml(tray.name || "-")}</td>
-          <td>${colorLabel}</td>
-          <td>${escapeHtml(tray.state || "-")}</td>
-        </tr>
+      const unit = Number(tray.unit);
+      const slot = Number(tray.slot);
+      if (Number.isFinite(unit) && unit > 0) {
+        maxUnit = Math.max(maxUnit, unit);
+      }
+      if (Number.isFinite(slot) && slot > 0) {
+        maxSlot = Math.max(maxSlot, slot);
+      }
+      if (Number.isFinite(unit) && unit > 0 && Number.isFinite(slot) && slot > 0) {
+        traysByPosition.set(`${unit}:${slot}`, tray);
+      }
+    }
+    const hintedUnitCount = Number(printer.ams_units);
+    const hintedSlotCount = Number(printer.ams_slots);
+    const unitCount = Math.max(maxUnit, Number.isFinite(hintedUnitCount) && hintedUnitCount > 0 ? hintedUnitCount : 1);
+    const slotsPerUnit = Math.max(maxSlot, Number.isFinite(hintedSlotCount) && hintedSlotCount > 0 ? hintedSlotCount : 4);
+    const units = [];
+    for (let unit = 1; unit <= unitCount; unit += 1) {
+      const slots = [];
+      for (let slot = 1; slot <= slotsPerUnit; slot += 1) {
+        const tray = traysByPosition.get(`${unit}:${slot}`) || null;
+        const trayHexes = tray ? resolveColorHexes(tray.colors, tray.color) : [];
+        const swatchFill = tray ? buildSwatchFill(trayHexes, tray.name, tray.color) : "transparent";
+        const label = tray?.name || tray?.material || "Empty";
+        const meta = tray?.material || tray?.state || "No spool loaded";
+        slots.push(`
+          <div class="ams-slot${tray ? " is-loaded" : " is-empty"}">
+            <div class="ams-slot-header">
+              <span class="ams-slot-label">A${unit} S${slot}</span>
+              <span class="ams-slot-state">${escapeHtml(tray?.state || "Empty")}</span>
+            </div>
+            <div class="ams-slot-spool" style="--swatch-fill: ${escapeHtml(swatchFill)}; --swatch-color: ${escapeHtml(
+          trayHexes[0] || "transparent"
+        )};">
+              <div class="ams-slot-core"></div>
+            </div>
+            <div class="ams-slot-name">${escapeHtml(label)}</div>
+            <div class="ams-slot-meta">${tray ? escapeHtml(meta) : '<span class="muted">No spool loaded</span>'}</div>
+          </div>
+        `);
+      }
+      units.push(`
+        <section class="ams-unit">
+          <div class="ams-unit-title">AMS ${unit}</div>
+          <div class="ams-slot-grid">${slots.join("")}</div>
+        </section>
       `);
     }
+    const loadedLabel = loaded.length === 1 ? "1 loaded tray" : `${loaded.length} loaded trays`;
+    cards.push(`
+      <article class="ams-printer-card">
+        <div class="ams-printer-header">
+          <div>
+            <h4>${escapeHtml(printer.printer_name || printer.printer_id || "Printer")}</h4>
+            <p>${escapeHtml(printer.printer_id || "")}</p>
+          </div>
+          <div class="ams-printer-count">${escapeHtml(loadedLabel)}</div>
+        </div>
+        <div class="ams-unit-list">${units.join("")}</div>
+      </article>
+    `);
   }
-  if (!rows.length && state.bambuViewPrinters.length) {
-    bambuViewTableBody.innerHTML = `<tr><td colspan="6" class="muted">No printer details reported by PrintLab.</td></tr>`;
+  if (!cards.length && state.bambuViewPrinters.length) {
+    bambuViewGrid.innerHTML = `<div class="ams-empty-state muted">No printer details reported by PrintLab.</div>`;
     return;
   }
-  if (!rows.length) {
-    bambuViewTableBody.innerHTML = `<tr><td colspan="6" class="muted">No PrintLab data loaded yet.</td></tr>`;
+  if (!cards.length) {
+    bambuViewGrid.innerHTML = `<div class="ams-empty-state muted">No PrintLab data loaded yet.</div>`;
     return;
   }
-  bambuViewTableBody.innerHTML = rows.join("");
+  bambuViewGrid.innerHTML = cards.join("");
 }
 
 function renderMovements(movements) {

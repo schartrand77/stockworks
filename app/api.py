@@ -1501,17 +1501,23 @@ def fetch_printlab_filaments(_: bool = Depends(require_auth)):
         printer_id = str(printer.get("id") or "").strip()
         if not printer_id:
             continue
-        state = {}
-        try:
-            state = client.fetch_printer_state(printer_id)
-        except PrintLabIntegrationError as exc:
-            _printlab_trace(trace_id, "printer_state_error", printer_id=printer_id, error=str(exc))
-            if isinstance(printer.get("ams"), dict) or isinstance(printer.get("trays"), list):
-                state = printer
-
-        ams, trays = _extract_ams_trays(state if isinstance(state, dict) else {})
+        state = printer
+        ams, trays = _extract_ams_trays(printer)
         if not trays:
             trays = _extract_printlab_trays(ams)
+        if trays:
+            _printlab_trace(trace_id, "printer_state_skipped", printer_id=printer_id, source="fleet")
+        else:
+            state = {}
+            try:
+                state = client.fetch_printer_state(printer_id)
+            except PrintLabIntegrationError as exc:
+                _printlab_trace(trace_id, "printer_state_error", printer_id=printer_id, error=str(exc))
+                if isinstance(printer.get("ams"), dict) or isinstance(printer.get("trays"), list):
+                    state = printer
+            ams, trays = _extract_ams_trays(state if isinstance(state, dict) else {})
+            if not trays:
+                trays = _extract_printlab_trays(ams)
         _printlab_trace(
             trace_id,
             "printer_parsed",
