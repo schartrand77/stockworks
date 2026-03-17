@@ -1933,7 +1933,7 @@ def _looks_like_loaded_label(value: str) -> bool:
 
 
 def _printlab_trace_enabled() -> bool:
-    raw = (os.environ.get("PRINTLAB_TRACE") or os.environ.get("BAMBU_VIEW_TRACE") or "").strip().lower()
+    raw = (os.environ.get("PRINTLAB_TRACE") or "").strip().lower()
     return raw in {"1", "true", "yes", "on"}
 
 

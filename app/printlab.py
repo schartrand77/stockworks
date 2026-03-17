@@ -197,20 +197,13 @@ class PrintLabClient:
 _PRINTLAB_CLIENT: Optional[PrintLabClient] = None
 
 
-def _read_env(primary: str, fallback: str) -> Optional[str]:
-    value = os.environ.get(primary)
-    if value is not None:
-        return value
-    return os.environ.get(fallback)
-
-
 def get_printlab_client() -> PrintLabClient:
     global _PRINTLAB_CLIENT
     if _PRINTLAB_CLIENT is None:
         _PRINTLAB_CLIENT = PrintLabClient(
-            base_url=_read_env("PRINTLAB_BASE_URL", "BAMBU_VIEW_BASE_URL"),
-            api_key=_read_env("PRINTLAB_API_KEY", "BAMBU_VIEW_API_KEY"),
-            api_auth_header=_read_env("PRINTLAB_API_AUTH_HEADER", "BAMBU_VIEW_API_AUTH_HEADER"),
+            base_url=os.environ.get("PRINTLAB_BASE_URL"),
+            api_key=os.environ.get("PRINTLAB_API_KEY"),
+            api_auth_header=os.environ.get("PRINTLAB_API_AUTH_HEADER"),
             bearer_token=os.environ.get("PRINTLAB_BEARER_TOKEN"),
         )
     return _PRINTLAB_CLIENT
