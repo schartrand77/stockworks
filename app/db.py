@@ -110,13 +110,16 @@ _DB_READY = False
 def init_db() -> None:
     """Create database tables if they don't exist yet and ensure schema patches are applied."""
     global _DB_READY
+    from . import models  # noqa: F401
+
     _ensure_schema_exists()
     SQLModel.metadata.create_all(engine)
     _ensure_sqlite_pragmas()
-    _ensure_performance_indexes()
     _ensure_material_columns()
     _ensure_hardware_columns()
     _ensure_print_model_columns()
+    _ensure_performance_indexes()
+    _ensure_bambu_petg_hf_materials()
     _DB_READY = True
 
 
@@ -171,6 +174,82 @@ def _ensure_material_columns() -> None:
             table_name = f"{quoted_schema}.material"
             for column, ddl in desired_columns.items():
                 conn.exec_driver_sql(f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS {column} {ddl}")
+
+
+def _ensure_bambu_petg_hf_materials() -> None:
+    """Create the built-in Bambu PETG HF material rows when they are missing."""
+    from sqlmodel import select
+
+    from .bambu_catalog import (
+        BAMBU_PETG_HF_CATEGORY,
+        BAMBU_PETG_HF_COLORS,
+        BAMBU_PETG_HF_FILAMENT_TYPE,
+        BAMBU_PETG_HF_PRICE_PER_GRAM,
+        BAMBU_PETG_HF_SPOOL_WEIGHT_GRAMS,
+        BAMBU_PETG_HF_SUPPLIER,
+    )
+    from .models import Material, MaterialCostHistory
+
+    with Session(engine) as session:
+        changed = False
+        for entry in BAMBU_PETG_HF_COLORS:
+            material_changed = False
+            material = session.exec(
+                select(Material).where(
+                    Material.brand == BAMBU_PETG_HF_SUPPLIER,
+                    Material.filament_type == BAMBU_PETG_HF_FILAMENT_TYPE,
+                    Material.color == entry.color,
+                )
+            ).first()
+            if material is None:
+                material = Material(
+                    name=f"{BAMBU_PETG_HF_SUPPLIER} {BAMBU_PETG_HF_FILAMENT_TYPE} - {entry.color}",
+                    brand=BAMBU_PETG_HF_SUPPLIER,
+                    filament_type=BAMBU_PETG_HF_FILAMENT_TYPE,
+                    category=BAMBU_PETG_HF_CATEGORY,
+                    color=entry.color,
+                    color_hex=entry.hex_code,
+                    color_hexes=[entry.hex_code],
+                    supplier=BAMBU_PETG_HF_SUPPLIER,
+                    price_per_gram=BAMBU_PETG_HF_PRICE_PER_GRAM,
+                    spool_weight_grams=BAMBU_PETG_HF_SPOOL_WEIGHT_GRAMS,
+                    notes="Built-in Bambu Lab PETG HF catalog entry.",
+                )
+                session.add(material)
+                session.flush()
+                session.add(
+                    MaterialCostHistory(
+                        material_id=material.id,
+                        unit_cost_per_gram=BAMBU_PETG_HF_PRICE_PER_GRAM,
+                        vendor=BAMBU_PETG_HF_SUPPLIER,
+                        reference="bambu_petg_hf_catalog",
+                        note="Initial built-in catalog price",
+                    )
+                )
+                changed = True
+                continue
+
+            if material.color_hex != entry.hex_code:
+                material.color_hex = entry.hex_code
+                material_changed = True
+            if material.color_hexes != [entry.hex_code]:
+                material.color_hexes = [entry.hex_code]
+                material_changed = True
+            if not material.category:
+                material.category = BAMBU_PETG_HF_CATEGORY
+                material_changed = True
+            if not material.supplier:
+                material.supplier = BAMBU_PETG_HF_SUPPLIER
+                material_changed = True
+            if not material.spool_weight_grams:
+                material.spool_weight_grams = BAMBU_PETG_HF_SPOOL_WEIGHT_GRAMS
+                material_changed = True
+            if material_changed:
+                session.add(material)
+                changed = True
+
+        if changed:
+            session.commit()
 
 
 def _ensure_schema_exists() -> None:

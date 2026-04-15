@@ -370,7 +370,7 @@ def require_csrf(
 
 def _credentials_valid(username: str, password: str) -> bool:
     normalized_username = username.strip()
-    if not secrets.compare_digest(normalized_username, ADMIN_USERNAME):
+    if not secrets.compare_digest(normalized_username.lower(), ADMIN_USERNAME.lower()):
         return False
     if secrets.compare_digest(password, ADMIN_PASSWORD):
         return True

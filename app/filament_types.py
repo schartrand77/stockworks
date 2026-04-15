@@ -17,6 +17,7 @@ BAMBU_X1C_FILAMENT_TYPES = [
     "PLA Transparent",
     "PLA-CF",
     "PETG Basic",
+    "PETG HF",
     "PETG Translucent",
     "PETG-CF",
     "PA-CF",
