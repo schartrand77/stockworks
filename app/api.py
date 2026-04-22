@@ -127,6 +127,7 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 mimetypes.add_type("application/manifest+json", ".webmanifest")
 
 ADMIN_USERNAME = (os.environ.get("ADMIN_USERNAME") or "admin").strip() or "admin"
+ADMIN_EMAIL = (os.environ.get("ADMIN_EMAIL") or "").strip()
 ADMIN_PASSWORD = (os.environ.get("ADMIN_PASSWORD") or "").strip()
 SECRET_KEY = (os.environ.get("SECRET_KEY") or "").strip()
 SESSION_COOKIE = "stockworks-session"
@@ -370,7 +371,11 @@ def require_csrf(
 
 def _credentials_valid(username: str, password: str) -> bool:
     normalized_username = username.strip()
-    if not secrets.compare_digest(normalized_username.lower(), ADMIN_USERNAME.lower()):
+    normalized_identifier = normalized_username.lower()
+    allowed_identifiers = [ADMIN_USERNAME.lower()]
+    if ADMIN_EMAIL:
+        allowed_identifiers.append(ADMIN_EMAIL.lower())
+    if not any(secrets.compare_digest(normalized_identifier, identifier) for identifier in allowed_identifiers):
         return False
     if secrets.compare_digest(password, ADMIN_PASSWORD):
         return True

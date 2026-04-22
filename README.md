@@ -63,7 +63,7 @@ There are two ways your admin can connect StockWorks:
 
 2) **OrderWorks login (backup option)**
    - If the database connection is not available, StockWorks can log in to OrderWorks.
-   - It uses an admin username and password set by your admin.
+   - It uses an admin username or email and password set by your admin.
 
 
 ### What you will see in Orders

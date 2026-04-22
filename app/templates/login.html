@@ -30,7 +30,7 @@
         <form method="post" action="/login" class="auth-form">
           <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
           <label>
-            Username
+            Username or email
             <input type="text" name="username" autocomplete="username" required value="{{ username or '' }}" />
           </label>
           <label>
