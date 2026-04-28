@@ -30,6 +30,8 @@ const state = {
 };
 
 const messageEl = document.getElementById("message");
+const userRole = document.body?.dataset?.userRole || "admin";
+const isShopRole = userRole === "shop";
 const csrfMeta = document.querySelector('meta[name="csrf-token"]');
 const csrfToken = csrfMeta ? String(csrfMeta.content || "").trim() : "";
 const refreshAllBtn = document.getElementById("refresh-all");
@@ -113,6 +115,13 @@ const receiptVerifyForm = document.getElementById("receipt-verify-form");
 const receiptVerifyLocationInput = document.getElementById("receipt-verify-location");
 const receiptVerifyNoteInput = document.getElementById("receipt-verify-note");
 const receiptLinesTableBody = document.querySelector("#receipt-lines-table tbody");
+const receiptAuditList = document.getElementById("receipt-audit-list");
+const receiptPrintLabelsBtn = document.getElementById("receipt-print-labels");
+const materialsImportTrigger = document.getElementById("materials-import-trigger");
+const materialsImportFile = document.getElementById("materials-import-file");
+const hardwareImportTrigger = document.getElementById("hardware-import-trigger");
+const hardwareImportFile = document.getElementById("hardware-import-file");
+const lowStockDigestSendBtn = document.getElementById("low-stock-digest-send");
 
 // Pagination references
 const materialsPrevBtn = document.getElementById("materials-prev");
@@ -348,6 +357,7 @@ document.addEventListener("DOMContentLoaded", () => {
   applyThemePreference(forcedThemeChoice);
   initThemeToggle();
   initTabs();
+  applyRoleRestrictions();
   bindEvents();
   resetMerchForm();
   updateMaterialColorRequirement();
@@ -630,6 +640,38 @@ function bindTap(button, handler) {
   });
 }
 
+function applyRoleRestrictions() {
+  if (!isShopRole) {
+    return;
+  }
+  document.querySelectorAll(".admin-only").forEach((element) => {
+    element.hidden = true;
+  });
+  [
+    materialForm,
+    hardwareForm,
+    merchForm,
+    modelForm,
+    materialDeleteBtn,
+    hardwareDeleteBtn,
+    merchDeleteBtn,
+    modelDeleteBtn,
+    hardwareSyncMerchBtn,
+    merchSyncBtn,
+  ].forEach((element) => {
+    if (!element) {
+      return;
+    }
+    element.hidden = true;
+    element.querySelectorAll?.("input, select, textarea, button").forEach((control) => {
+      control.disabled = true;
+    });
+  });
+  if (inventoryDeleteBtn) {
+    inventoryDeleteBtn.hidden = true;
+  }
+}
+
 function bindEvents() {
   refreshAllBtn.addEventListener("click", refreshAll);
   materialRefreshBtn.addEventListener("click", () => safeAsync(loadMaterials));
@@ -661,6 +703,20 @@ function bindEvents() {
   }
   if (reportsRefreshBtn) {
     reportsRefreshBtn.addEventListener("click", () => safeAsync(refreshReports));
+  }
+  if (lowStockDigestSendBtn) {
+    lowStockDigestSendBtn.addEventListener("click", () => safeAsync(sendLowStockDigest));
+  }
+  if (receiptPrintLabelsBtn) {
+    receiptPrintLabelsBtn.addEventListener("click", printCurrentReceiptLabels);
+  }
+  if (materialsImportTrigger && materialsImportFile) {
+    materialsImportTrigger.addEventListener("click", () => materialsImportFile.click());
+    materialsImportFile.addEventListener("change", () => safeAsync(() => importCsvFile("materials", materialsImportFile)));
+  }
+  if (hardwareImportTrigger && hardwareImportFile) {
+    hardwareImportTrigger.addEventListener("click", () => hardwareImportFile.click());
+    hardwareImportFile.addEventListener("change", () => safeAsync(() => importCsvFile("hardware", hardwareImportFile)));
   }
   materialClearBtn.addEventListener("click", resetMaterialForm);
   inventoryClearBtn.addEventListener("click", resetInventoryForm);
@@ -1218,12 +1274,14 @@ async function loadInboundInvoices() {
     const active = state.inboundInvoices.find((invoice) => invoice.id === state.currentInboundInvoiceId);
     if (active) {
       renderInboundInvoiceDetail(active);
+      await loadReceiptAudit(active.id);
       return;
     }
   }
   if (state.inboundInvoices.length) {
     state.currentInboundInvoiceId = state.inboundInvoices[0].id;
     renderInboundInvoiceDetail(state.inboundInvoices[0]);
+    await loadReceiptAudit(state.inboundInvoices[0].id);
   } else {
     state.currentInboundInvoiceId = null;
     renderInboundInvoiceDetail(null);
@@ -2015,6 +2073,7 @@ function renderInboundInvoices() {
       state.currentInboundInvoiceId = invoice.id;
       renderInboundInvoices();
       renderInboundInvoiceDetail(invoice);
+      safeAsync(() => loadReceiptAudit(invoice.id));
     });
   });
 }
@@ -2029,6 +2088,12 @@ function renderInboundInvoiceDetail(invoice) {
     receiptLinesTableBody.innerHTML = `<tr><td colspan="5" class="muted">Select a receipt first.</td></tr>`;
     if (receiptVerifyLocationInput) {
       receiptVerifyLocationInput.value = "Receiving";
+    }
+    if (receiptAuditList) {
+      receiptAuditList.innerHTML = "Select a receipt to view audit events.";
+    }
+    if (receiptPrintLabelsBtn) {
+      receiptPrintLabelsBtn.disabled = true;
     }
     return;
   }
@@ -2046,6 +2111,9 @@ function renderInboundInvoiceDetail(invoice) {
   `;
   if (receiptVerifyLocationInput) {
     receiptVerifyLocationInput.value = invoice.expected_location || "Receiving";
+  }
+  if (receiptPrintLabelsBtn) {
+    receiptPrintLabelsBtn.disabled = !invoice.verified_at;
   }
   receiptLinesTableBody.innerHTML = (invoice.lines || [])
     .map(
@@ -2069,6 +2137,40 @@ function renderInboundInvoiceDetail(invoice) {
       `
     )
     .join("");
+}
+
+async function loadReceiptAudit(invoiceId) {
+  if (!receiptAuditList || !invoiceId) {
+    return;
+  }
+  const events = await api(`/inbound-invoices/${invoiceId}/audit`);
+  renderReceiptAudit(asArray(events));
+}
+
+function renderReceiptAudit(events) {
+  if (!receiptAuditList) {
+    return;
+  }
+  if (!events.length) {
+    receiptAuditList.innerHTML = `<div class="muted">No audit events recorded yet.</div>`;
+    return;
+  }
+  receiptAuditList.innerHTML = `
+    <ul class="audit-list">
+      ${events
+        .map(
+          (event) => `
+            <li>
+              <strong>${escapeHtml(formatOrderStatus(event.event_type || ""))}</strong>
+              <span>${escapeHtml(formatTimestamp(event.created_at))}</span>
+              <span>${escapeHtml(event.actor_username || "unknown")} (${escapeHtml(event.actor_role || "-")})</span>
+              <div>${escapeHtml(event.summary || "")}</div>
+            </li>
+          `
+        )
+        .join("")}
+    </ul>
+  `;
 }
 
 function renderModels() {
@@ -3030,6 +3132,42 @@ async function handleReceiptUploadSubmit(event) {
   }
   await Promise.all([loadInboundInvoices(), loadMaterials()]);
   setMessage("Inbound invoice uploaded. Expected inventory is now waiting for packing-slip verification.", "success");
+}
+
+async function importCsvFile(kind, input) {
+  if (!input?.files?.length) {
+    return;
+  }
+  const formData = new FormData();
+  formData.append("csv_file", input.files[0]);
+  const result = await uploadApi(`/${kind}/import`, formData);
+  input.value = "";
+  if (kind === "materials") {
+    await loadMaterials();
+  } else {
+    await loadHardware();
+  }
+  const errorText = result.errors?.length ? ` ${result.errors.length} row issue(s) reported.` : "";
+  setMessage(
+    `CSV import complete: ${result.created || 0} created, ${result.updated || 0} updated, ${result.skipped || 0} skipped.${errorText}`,
+    result.errors?.length ? "info" : "success"
+  );
+}
+
+async function sendLowStockDigest() {
+  const result = await api("/reports/low-stock-digest/send", { method: "POST" });
+  setMessage(
+    `Low-stock digest sent to ${result.recipient_count} recipient(s): ${result.filament_count} filament and ${result.hardware_count} hardware alert(s).`,
+    "success"
+  );
+}
+
+function printCurrentReceiptLabels() {
+  if (!state.currentInboundInvoiceId) {
+    setMessage("Select a verified receipt first.", "error");
+    return;
+  }
+  window.open(`/inbound-invoices/${state.currentInboundInvoiceId}/barcode-labels`, "_blank", "noopener,noreferrer");
 }
 
 async function handlePackingSlipSubmit(event) {

@@ -357,6 +357,25 @@ body::after {
   gap: 0.6rem;
 }
 
+.button-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.35rem;
+  padding: 0.65rem 0.95rem;
+  border-radius: var(--sap-radius-sm);
+  border: 1px solid var(--sap-border);
+  background: var(--sap-surface);
+  color: var(--sap-text);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.button-link:hover {
+  border-color: var(--sap-accent);
+  color: var(--sap-heading);
+}
+
 .table-controls {
   display: flex;
   flex-wrap: wrap;
@@ -1258,6 +1277,26 @@ th:last-child {
   text-transform: uppercase;
   color: var(--sap-text-muted);
   margin-bottom: 6px;
+}
+
+.audit-list {
+  display: grid;
+  gap: 0.65rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.audit-list li {
+  padding-bottom: 0.65rem;
+  border-bottom: 1px solid var(--sap-divider);
+}
+
+.audit-list span {
+  display: inline-block;
+  margin-left: 0.45rem;
+  color: var(--sap-text-muted);
+  font-size: 0.9rem;
 }
 
 .integration-status {

@@ -14,6 +14,8 @@ from pypdf import PdfReader
 from .normalization import normalize_sku
 
 DEFAULT_SUPPLIER = "Bambu Lab CA"
+DEFAULT_MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+PDF_MAGIC_BYTES = b"%PDF-"
 
 
 @dataclass
@@ -177,10 +179,41 @@ def resolve_upload_dir(project_root: Path) -> Path:
     return base_dir / "inbound_invoices"
 
 
-def store_upload(upload, destination_dir: Path, prefix: str) -> tuple[str, str]:
+def _resolve_max_upload_bytes() -> int:
+    raw_value = (os.environ.get("STOCKWORKS_MAX_UPLOAD_BYTES") or "").strip()
+    if not raw_value:
+        return DEFAULT_MAX_UPLOAD_BYTES
+    try:
+        max_bytes = int(raw_value)
+    except ValueError as exc:
+        raise ValueError("STOCKWORKS_MAX_UPLOAD_BYTES must be an integer.") from exc
+    if max_bytes < 1024:
+        raise ValueError("STOCKWORKS_MAX_UPLOAD_BYTES must be at least 1024 bytes.")
+    return max_bytes
+
+
+def _validate_pdf_upload(upload, max_bytes: int) -> None:
+    upload.file.seek(0)
+    header = upload.file.read(len(PDF_MAGIC_BYTES))
+    if header != PDF_MAGIC_BYTES:
+        raise ValueError("Uploaded file is not a valid PDF.")
+
+    upload.file.seek(0, os.SEEK_END)
+    size = upload.file.tell()
+    if size <= 0:
+        raise ValueError("Uploaded PDF is empty.")
+    if size > max_bytes:
+        raise ValueError(f"Uploaded PDF exceeds the {max_bytes} byte size limit.")
+    upload.file.seek(0)
+
+
+def store_upload(upload, destination_dir: Path, prefix: str, max_bytes: int | None = None) -> tuple[str, str]:
     destination_dir.mkdir(parents=True, exist_ok=True)
     original_name = Path(getattr(upload, "filename", "") or f"{prefix}.pdf").name
     suffix = Path(original_name).suffix or ".pdf"
+    if suffix.lower() != ".pdf":
+        raise ValueError("Uploaded file must use a .pdf extension.")
+    _validate_pdf_upload(upload, max_bytes or _resolve_max_upload_bytes())
     stored_name = f"{prefix}-{uuid.uuid4().hex}{suffix}"
     target = destination_dir / stored_name
     with target.open("wb") as handle:

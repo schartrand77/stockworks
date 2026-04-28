@@ -19,7 +19,7 @@
     <link rel="icon" type="image/png" sizes="1024x1024" href="/public/favicon.png" />
     <link rel="apple-touch-icon" sizes="1024x1024" href="/public/favicon.png" />
   </head>
-  <body>
+  <body data-user-role="{{ user_role or 'admin' }}">
     <main class="app-grid">
       <nav class="tab-nav" aria-label="Inventory sections">
         <div class="tab-nav-top">
@@ -154,11 +154,14 @@
             <p>Define filament attributes and default pricing.</p>
           </div>
           <div class="card-actions">
+            <a class="button-link" href="/materials.csv">Export CSV</a>
+            <button id="materials-import-trigger" class="admin-only" type="button">Import CSV</button>
             <button id="material-clear" type="button">Clear form</button>
             <button id="material-refresh" type="button">Refresh list</button>
           </div>
         </div>
         <div class="card-body two-columns" id="materials-body">
+          <input type="file" id="materials-import-file" accept=".csv,text/csv" hidden />
           <form id="material-form" class="stack">
             <input type="hidden" id="material-id" />
             <label>
@@ -435,6 +438,7 @@
           </div>
           <div class="card-actions">
             <button id="receipts-refresh" type="button">Refresh receipts</button>
+            <button id="receipt-print-labels" type="button" disabled>Print received labels</button>
           </div>
         </div>
         <div class="card-body two-columns" id="receipts-body">
@@ -476,6 +480,10 @@
             </div>
             <div id="receipt-detail" class="note-box">
               <div id="receipt-detail-summary" class="muted">Select a receipt to review expected lines and verify packing slip quantities.</div>
+            </div>
+            <div id="receipt-audit" class="note-box">
+              <div class="note-title">Receipt audit trail</div>
+              <div id="receipt-audit-list" class="muted">Select a receipt to view audit events.</div>
             </div>
             <form id="packing-slip-form" class="stack" enctype="multipart/form-data">
               <label>
@@ -735,12 +743,15 @@
             <p>Track magnets, inserts, screws, and other non-filament supplies.</p>
           </div>
           <div class="card-actions">
+            <a class="button-link" href="/hardware.csv">Export CSV</a>
+            <button id="hardware-import-trigger" class="admin-only" type="button">Import CSV</button>
             <button id="hardware-clear" type="button">Clear form</button>
             <button id="hardware-refresh" type="button">Refresh list</button>
             <button id="hardware-sync-merch" type="button">Sync MakerWorks merch</button>
           </div>
         </div>
         <div class="card-body" id="hardware-body">
+          <input type="file" id="hardware-import-file" accept=".csv,text/csv" hidden />
           <div class="two-columns">
             <form id="hardware-form" class="stack">
               <input type="hidden" id="hardware-id" />
@@ -1103,6 +1114,7 @@
           </div>
           <div class="card-actions">
             <button id="reports-refresh" type="button">Refresh reports</button>
+            <button id="low-stock-digest-send" type="button">Send low-stock digest</button>
           </div>
         </div>
         <div class="card-body reports-grid" id="reports-body">

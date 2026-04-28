@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import html
 import json
 import mimetypes
 import logging
@@ -29,6 +30,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from .barcodes import render_barcode_png
 from .bambu_invoice import DEFAULT_SUPPLIER, parse_invoice_pdf, resolve_upload_dir, store_upload
+from .authz import Actor, resolve_actor, role_can
 from .printlab import (
     PrintLabAuthenticationError,
     PrintLabIntegrationError,
@@ -36,7 +38,9 @@ from .printlab import (
     get_printlab_client,
 )
 from .color_resolver import normalize_hex, normalize_hex_list
+from .csv_tools import export_hardware_rows, export_material_rows, parse_hardware_csv, parse_material_csv
 from .db import get_session, init_db
+from .email_digest import LowStockEntry, build_low_stock_digest, send_digest_email, smtp_config_from_env
 from .filament_types import bambu_x1c_filament_types
 from .normalization import normalize_barcode, normalize_sku
 from .orderworks import (
@@ -64,6 +68,8 @@ from .models import (
     InboundInvoiceLineRead,
     InboundInvoiceRead,
     InboundInvoiceVerifyRequest,
+    InboundReceiptAuditEvent,
+    InboundReceiptAuditEventRead,
     Material,
     MaterialCreate,
     MaterialRead,
@@ -129,6 +135,9 @@ mimetypes.add_type("application/manifest+json", ".webmanifest")
 ADMIN_USERNAME = (os.environ.get("ADMIN_USERNAME") or "admin").strip() or "admin"
 ADMIN_EMAIL = (os.environ.get("ADMIN_EMAIL") or "").strip()
 ADMIN_PASSWORD = (os.environ.get("ADMIN_PASSWORD") or "").strip()
+SHOP_USERNAME = (os.environ.get("SHOP_USERNAME") or "").strip()
+SHOP_EMAIL = (os.environ.get("SHOP_EMAIL") or "").strip()
+SHOP_PASSWORD = (os.environ.get("SHOP_PASSWORD") or "").strip()
 SECRET_KEY = (os.environ.get("SECRET_KEY") or "").strip()
 SESSION_COOKIE = "stockworks-session"
 SESSION_MAX_AGE_SECONDS = int(os.environ.get("SESSION_MAX_AGE_SECONDS", "28800"))
@@ -147,6 +156,7 @@ CSRF_TOKEN_LENGTH = 48
 LOGIN_RATE_LIMIT_ATTEMPTS = int(os.environ.get("LOGIN_RATE_LIMIT_ATTEMPTS", "5"))
 LOGIN_RATE_LIMIT_WINDOW_SECONDS = int(os.environ.get("LOGIN_RATE_LIMIT_WINDOW_SECONDS", "300"))
 LOGIN_RATE_LIMIT_BLOCK_SECONDS = int(os.environ.get("LOGIN_RATE_LIMIT_BLOCK_SECONDS", "900"))
+STOCKWORKS_MAX_BATCH_LABELS = int(os.environ.get("STOCKWORKS_MAX_BATCH_LABELS", "250"))
 _SECURE_PLACEHOLDERS = {
     "",
     "changeme",
@@ -169,6 +179,13 @@ def _validate_security_config() -> None:
         raise RuntimeError("ADMIN_PASSWORD must not be a default placeholder value.")
     if len(ADMIN_PASSWORD) < 12:
         raise RuntimeError("ADMIN_PASSWORD must be at least 12 characters.")
+    if SHOP_USERNAME or SHOP_EMAIL or SHOP_PASSWORD:
+        if not SHOP_USERNAME or not SHOP_PASSWORD:
+            raise RuntimeError("SHOP_USERNAME and SHOP_PASSWORD must both be configured to enable shop-floor login.")
+        if SHOP_PASSWORD.lower() in _SECURE_PLACEHOLDERS:
+            raise RuntimeError("SHOP_PASSWORD must not be a default placeholder value.")
+        if len(SHOP_PASSWORD) < 12:
+            raise RuntimeError("SHOP_PASSWORD must be at least 12 characters.")
     if not SECRET_KEY:
         raise RuntimeError("SECRET_KEY must be configured via environment variable.")
     if SECRET_KEY.lower() in _SECURE_PLACEHOLDERS:
@@ -181,6 +198,8 @@ def _validate_security_config() -> None:
         raise RuntimeError("SESSION_MAX_AGE_SECONDS must be at least 300.")
     if CORS_ALLOW_CREDENTIALS and "*" in CORS_ALLOW_ORIGINS:
         raise RuntimeError("CORS_ALLOW_ORIGINS cannot contain '*' when CORS_ALLOW_CREDENTIALS is enabled.")
+    if STOCKWORKS_MAX_BATCH_LABELS < 1:
+        raise RuntimeError("STOCKWORKS_MAX_BATCH_LABELS must be at least 1.")
 
 
 _validate_security_config()
@@ -333,27 +352,67 @@ def _validate_csrf_token(request: Request, csrf_token: str | None) -> None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid CSRF token.")
 
 
-def _is_basic_auth_valid(authorization: str | None) -> bool:
+def _actor_from_credentials(username: str, password: str) -> Actor | None:
+    return resolve_actor(
+        username,
+        password,
+        admin_username=ADMIN_USERNAME,
+        admin_email=ADMIN_EMAIL,
+        admin_password=ADMIN_PASSWORD,
+        shop_username=SHOP_USERNAME or None,
+        shop_email=SHOP_EMAIL or None,
+        shop_password=SHOP_PASSWORD or None,
+    )
+
+
+def _basic_auth_actor(authorization: str | None) -> Actor | None:
     if not authorization:
-        return False
+        return None
     scheme, _, token = authorization.partition(" ")
     if scheme.lower() != "basic" or not token:
-        return False
+        return None
     try:
         decoded = base64.b64decode(token, validate=True).decode("utf-8")
     except Exception:
-        return False
+        return None
     username, sep, password = decoded.partition(":")
     if not sep:
-        return False
-    return _credentials_valid(username, password)
+        return None
+    return _actor_from_credentials(username, password)
+
+
+def _is_basic_auth_valid(authorization: str | None) -> bool:
+    return _basic_auth_actor(authorization) is not None
+
+
+def _session_actor(request: Request) -> Actor | None:
+    if not _is_authenticated(request):
+        return None
+    username = str(request.session.get("username") or ADMIN_USERNAME)
+    role = str(request.session.get("role") or "admin")
+    return Actor(username=username, role=role)
+
+
+def get_actor(request: Request, authorization: str | None = Header(default=None, alias="Authorization")) -> Actor:
+    actor = _session_actor(request) or _basic_auth_actor(authorization)
+    if not actor:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+    request.state.actor = actor
+    return actor
 
 
 def require_auth(request: Request, authorization: str | None = Header(default=None, alias="Authorization")) -> bool:
-    if not _is_authenticated(request):
-        if not _is_basic_auth_valid(authorization):
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+    get_actor(request, authorization)
     return True
+
+
+def require_permission(action: str):
+    def _dependency(actor: Actor = Depends(get_actor)) -> Actor:
+        if not role_can(actor.role, action):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+        return actor
+
+    return _dependency
 
 
 def require_csrf(
@@ -370,17 +429,7 @@ def require_csrf(
 
 
 def _credentials_valid(username: str, password: str) -> bool:
-    normalized_username = username.strip()
-    normalized_identifier = normalized_username.lower()
-    allowed_identifiers = [ADMIN_USERNAME.lower()]
-    if ADMIN_EMAIL:
-        allowed_identifiers.append(ADMIN_EMAIL.lower())
-    if not any(secrets.compare_digest(normalized_identifier, identifier) for identifier in allowed_identifiers):
-        return False
-    if secrets.compare_digest(password, ADMIN_PASSWORD):
-        return True
-    # Tolerate accidental leading/trailing whitespace from copy/paste.
-    return secrets.compare_digest(password.strip(), ADMIN_PASSWORD)
+    return _actor_from_credentials(username, password) is not None
 
 
 def _login_rate_limit_key(request: Request, username: str) -> str:
@@ -435,7 +484,7 @@ def root(request: Request):
         return RedirectResponse("/login", status_code=status.HTTP_302_FOUND)
     return templates.TemplateResponse(
         "index.html",
-        {"request": request, "csrf_token": _ensure_csrf_token(request)},
+        {"request": request, "csrf_token": _ensure_csrf_token(request), "user_role": (_session_actor(request) or Actor(ADMIN_USERNAME, "admin")).role},
         headers={"Cache-Control": "no-store"},
     )
 
@@ -471,10 +520,12 @@ async def login(
             "csrf_token": _ensure_csrf_token(request),
         }
         return templates.TemplateResponse("login.html", context, status_code=status.HTTP_429_TOO_MANY_REQUESTS)
-    if _credentials_valid(username, password):
+    actor = _actor_from_credentials(username, password)
+    if actor:
         _clear_failed_logins(key)
         request.session["authenticated"] = True
-        request.session["username"] = ADMIN_USERNAME
+        request.session["username"] = actor.username
+        request.session["role"] = actor.role
         request.session["csrf_token"] = _new_csrf_token()
         return RedirectResponse("/", status_code=status.HTTP_303_SEE_OTHER)
     blocked_for = _record_failed_login(key)
@@ -506,7 +557,7 @@ def logout(request: Request, csrf_token: str = Form(...)):
 def create_material(
     payload: MaterialCreate,
     session: Session = Depends(get_session),
-    _: bool = Depends(require_auth),
+    _: Actor = Depends(require_permission("materials:create")),
     _csrf: bool = Depends(require_csrf),
 ):
     data = payload.dict()
@@ -570,6 +621,57 @@ def list_materials(
     )
 
 
+@app.get("/materials.csv")
+def export_materials_csv(
+    session: Session = Depends(get_session),
+    _: Actor = Depends(require_permission("csv:export")),
+):
+    materials = session.exec(select(Material).order_by(Material.name)).all()
+    return Response(
+        content=export_material_rows(materials),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="stockworks-materials.csv"'},
+    )
+
+
+@app.post("/materials/import")
+def import_materials_csv(
+    csv_file: UploadFile = File(...),
+    session: Session = Depends(get_session),
+    _: Actor = Depends(require_permission("materials:update")),
+    _csrf: bool = Depends(require_csrf),
+):
+    result = parse_material_csv(_read_upload_bytes(csv_file))
+    created = 0
+    updated = 0
+    for row in result.rows:
+        material = None
+        barcode = normalize_barcode(row.get("barcode"))
+        refill_barcode = normalize_barcode(row.get("refill_barcode"))
+        if barcode:
+            material = session.exec(select(Material).where(Material.barcode == barcode)).first()
+        if material is None and row.get("name"):
+            material = session.exec(select(Material).where(Material.name.ilike(str(row["name"])))).first()
+        normalized_hexes = normalize_hex_list(row.get("color_hexes"))
+        primary_hex = normalize_hex(row.get("color_hex")) or (normalized_hexes[0] if normalized_hexes else None)
+        data = dict(row)
+        data["barcode"] = barcode
+        data["refill_barcode"] = refill_barcode
+        data["color_hexes"] = normalized_hexes or None
+        data["color_hex"] = primary_hex
+        if material:
+            for key, value in data.items():
+                setattr(material, key, value)
+            session.add(material)
+            updated += 1
+        else:
+            data["name"] = _ensure_unique_material_name(session, data["name"])
+            session.add(Material(**data))
+            created += 1
+    session.commit()
+    return {"created": created, "updated": updated, "skipped": len(result.errors), "errors": result.errors}
+
+
 @app.get("/materials/{material_id}", response_model=MaterialRead)
 def get_material(material_id: int, session: Session = Depends(get_session), _: bool = Depends(require_auth)):
     material = session.get(Material, material_id)
@@ -583,7 +685,7 @@ def update_material(
     material_id: int,
     payload: MaterialUpdate,
     session: Session = Depends(get_session),
-    _: bool = Depends(require_auth),
+    _: Actor = Depends(require_permission("materials:update")),
     _csrf: bool = Depends(require_csrf),
 ):
     material = session.get(Material, material_id)
@@ -638,7 +740,7 @@ def create_material_cost_history(
     material_id: int,
     payload: MaterialCostHistoryCreate,
     session: Session = Depends(get_session),
-    _: bool = Depends(require_auth),
+    _: Actor = Depends(require_permission("materials:update")),
     _csrf: bool = Depends(require_csrf),
 ):
     if material_id != payload.material_id:
@@ -680,7 +782,7 @@ def get_material_barcode(
 def delete_material(
     material_id: int,
     session: Session = Depends(get_session),
-    _: bool = Depends(require_auth),
+    _: Actor = Depends(require_permission("materials:delete")),
     _csrf: bool = Depends(require_csrf),
 ):
     material = session.get(Material, material_id)
@@ -792,7 +894,7 @@ def update_inventory_item(
 def delete_inventory_item(
     item_id: int,
     session: Session = Depends(get_session),
-    _: bool = Depends(require_auth),
+    _: Actor = Depends(require_permission("inventory:delete")),
     _csrf: bool = Depends(require_csrf),
 ):
     item = session.get(InventoryItem, item_id)
@@ -835,21 +937,76 @@ def get_inbound_invoice(
     return _inbound_invoice_to_read(invoice)
 
 
+@app.get("/inbound-invoices/{invoice_id}/audit", response_model=List[InboundReceiptAuditEventRead])
+def list_inbound_invoice_audit(
+    invoice_id: int,
+    session: Session = Depends(get_session),
+    _: bool = Depends(require_auth),
+):
+    if not session.get(InboundInvoice, invoice_id):
+        raise HTTPException(status_code=404, detail="Inbound invoice not found")
+    events = session.exec(
+        select(InboundReceiptAuditEvent)
+        .where(InboundReceiptAuditEvent.invoice_id == invoice_id)
+        .order_by(InboundReceiptAuditEvent.created_at.desc())
+    ).all()
+    return events
+
+
+@app.get("/inbound-invoices/{invoice_id}/barcode-labels", response_class=HTMLResponse)
+def inbound_invoice_barcode_labels(
+    invoice_id: int,
+    session: Session = Depends(get_session),
+    _: Actor = Depends(require_permission("labels:print")),
+):
+    invoice = session.exec(
+        select(InboundInvoice).options(selectinload(InboundInvoice.lines)).where(InboundInvoice.id == invoice_id)
+    ).first()
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Inbound invoice not found")
+    if not invoice.verified_at:
+        raise HTTPException(status_code=400, detail="Barcode labels are available after receipt verification.")
+    labels: list[str] = []
+    remaining = STOCKWORKS_MAX_BATCH_LABELS
+    for line in sorted(invoice.lines, key=lambda entry: entry.id or 0):
+        if remaining <= 0:
+            break
+        material = session.get(Material, line.material_id) if line.material_id else None
+        barcode_value = normalize_barcode(line.sku) or normalize_barcode(material.barcode if material else None)
+        if not material or not barcode_value:
+            continue
+        for _index in range(min(int(line.received_quantity or 0), remaining)):
+            labels.append(_receipt_label_html(invoice, line, material, barcode_value))
+            remaining -= 1
+            if remaining <= 0:
+                break
+    body = "\n".join(labels) or '<p class="empty">No received lines with barcodes were found.</p>'
+    return HTMLResponse(
+        _barcode_label_document(
+            title=f"StockWorks labels - {invoice.invoice_number}",
+            body=body,
+            truncated=remaining <= 0,
+        )
+    )
+
+
 @app.post("/inbound-invoices/upload", response_model=InboundInvoiceRead, status_code=status.HTTP_201_CREATED)
 def upload_inbound_invoice(
     invoice_pdf: UploadFile = File(...),
     expected_location: str = Form(default="Receiving"),
     reorder_level: float = Form(default=0),
     session: Session = Depends(get_session),
-    _: bool = Depends(require_auth),
+    actor: Actor = Depends(require_permission("receipts:write")),
     _csrf: bool = Depends(require_csrf),
 ):
     filename = (invoice_pdf.filename or "").strip()
     if not filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Invoice upload must be a PDF.")
-    source_filename, stored_path = store_upload(invoice_pdf, INBOUND_INVOICE_DIR, "invoice")
     try:
+        source_filename, stored_path = store_upload(invoice_pdf, INBOUND_INVOICE_DIR, "invoice")
         parsed = parse_invoice_pdf(Path(stored_path))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Unable to parse Bambu invoice PDF: {exc}") from exc
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Unable to parse Bambu invoice PDF: {exc}") from exc
 
@@ -911,6 +1068,19 @@ def upload_inbound_invoice(
             status="pending",
         )
         session.add(line)
+    _log_receipt_audit(
+        session,
+        invoice,
+        actor,
+        "invoice_uploaded",
+        f"Uploaded invoice {invoice.invoice_number}",
+        {
+            "source_filename": source_filename,
+            "invoice_number": invoice.invoice_number,
+            "expected_location": invoice.expected_location,
+            "line_count": len(parsed.lines),
+        },
+    )
     session.commit()
     session.refresh(invoice)
     invoice = session.exec(
@@ -924,7 +1094,7 @@ def upload_packing_slip(
     invoice_id: int,
     packing_slip_pdf: UploadFile = File(...),
     session: Session = Depends(get_session),
-    _: bool = Depends(require_auth),
+    actor: Actor = Depends(require_permission("receipts:write")),
     _csrf: bool = Depends(require_csrf),
 ):
     invoice = session.exec(
@@ -937,12 +1107,23 @@ def upload_packing_slip(
     filename = (packing_slip_pdf.filename or "").strip()
     if not filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Packing slip upload must be a PDF.")
-    source_filename, stored_path = store_upload(packing_slip_pdf, INBOUND_INVOICE_DIR, "packing-slip")
+    try:
+        source_filename, stored_path = store_upload(packing_slip_pdf, INBOUND_INVOICE_DIR, "packing-slip")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     invoice.packing_slip_filename = source_filename
     invoice.packing_slip_file_path = stored_path
     invoice.packing_slip_uploaded_at = datetime.utcnow()
     invoice.status = "ready_for_verification"
     session.add(invoice)
+    _log_receipt_audit(
+        session,
+        invoice,
+        actor,
+        "packing_slip_uploaded",
+        f"Uploaded packing slip for invoice {invoice.invoice_number}",
+        {"source_filename": source_filename},
+    )
     session.commit()
     session.refresh(invoice)
     invoice = session.exec(
@@ -956,7 +1137,7 @@ def verify_inbound_invoice(
     invoice_id: int,
     payload: InboundInvoiceVerifyRequest,
     session: Session = Depends(get_session),
-    _: bool = Depends(require_auth),
+    actor: Actor = Depends(require_permission("receipts:write")),
     _csrf: bool = Depends(require_csrf),
 ):
     invoice = session.exec(
@@ -973,6 +1154,7 @@ def verify_inbound_invoice(
     received_lookup = {line.line_id: int(line.received_quantity) for line in payload.lines}
     total_received_grams = 0.0
     for line in invoice.lines:
+        previous_quantity = int(line.received_quantity or 0)
         received_quantity = max(received_lookup.get(line.id, 0), 0)
         line.received_quantity = received_quantity
         if received_quantity == 0:
@@ -983,6 +1165,22 @@ def verify_inbound_invoice(
             line.status = "received"
         else:
             line.status = "over_received"
+        if previous_quantity != received_quantity:
+            _log_receipt_audit(
+                session,
+                invoice,
+                actor,
+                "line_quantity_changed",
+                f"Changed received quantity for SKU {line.sku}",
+                {
+                    "line_id": line.id,
+                    "sku": line.sku,
+                    "product_name": line.product_name,
+                    "previous_quantity": previous_quantity,
+                    "new_quantity": received_quantity,
+                    "expected_quantity": line.expected_quantity,
+                },
+            )
         material = session.get(Material, line.material_id) if line.material_id else None
         if material is None:
             material = _upsert_bambu_material(
@@ -1033,6 +1231,19 @@ def verify_inbound_invoice(
     invoice.verified_at = datetime.utcnow()
     invoice.status = "verified"
     session.add(invoice)
+    _log_receipt_audit(
+        session,
+        invoice,
+        actor,
+        "receipt_verified",
+        f"Verified receipt for invoice {invoice.invoice_number}",
+        {
+            "total_expected_grams": invoice.total_expected_grams,
+            "total_received_grams": total_received_grams,
+            "location": location,
+            "note": invoice.verification_note,
+        },
+    )
     session.commit()
     session.refresh(invoice)
     invoice = session.exec(
@@ -1081,7 +1292,7 @@ def list_movements(item_id: int, session: Session = Depends(get_session), _: boo
 def create_hardware_item(
     payload: HardwareItemCreate,
     session: Session = Depends(get_session),
-    _: bool = Depends(require_auth),
+    _: Actor = Depends(require_permission("hardware:create")),
     _csrf: bool = Depends(require_csrf),
 ):
     item = HardwareItem.from_orm(payload)
@@ -1133,6 +1344,51 @@ def list_hardware_items(
     return PaginatedHardwareRead(items=items, total=total, limit=limit, offset=offset)
 
 
+@app.get("/hardware.csv")
+def export_hardware_csv(
+    session: Session = Depends(get_session),
+    _: Actor = Depends(require_permission("csv:export")),
+):
+    items = session.exec(select(HardwareItem).order_by(HardwareItem.name)).all()
+    return Response(
+        content=export_hardware_rows(items),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="stockworks-hardware.csv"'},
+    )
+
+
+@app.post("/hardware/import")
+def import_hardware_csv(
+    csv_file: UploadFile = File(...),
+    session: Session = Depends(get_session),
+    _: Actor = Depends(require_permission("hardware:update")),
+    _csrf: bool = Depends(require_csrf),
+):
+    result = parse_hardware_csv(_read_upload_bytes(csv_file))
+    created = 0
+    updated = 0
+    for row in result.rows:
+        sku = normalize_sku(row.get("merch_sku"))
+        item = None
+        if sku:
+            item = session.exec(select(HardwareItem).where(HardwareItem.merch_sku == sku)).first()
+        if item is None and row.get("name"):
+            item = session.exec(select(HardwareItem).where(HardwareItem.name.ilike(str(row["name"])))).first()
+        data = dict(row)
+        data["merch_sku"] = sku
+        data["unit_of_measure"] = data.get("unit_of_measure") or "piece"
+        if item:
+            for key, value in data.items():
+                setattr(item, key, value)
+            session.add(item)
+            updated += 1
+        else:
+            session.add(HardwareItem(**data))
+            created += 1
+    session.commit()
+    return {"created": created, "updated": updated, "skipped": len(result.errors), "errors": result.errors}
+
+
 @app.get("/hardware/{hardware_id}", response_model=HardwareItemRead)
 def get_hardware_item(hardware_id: int, session: Session = Depends(get_session), _: bool = Depends(require_auth)):
     item = session.get(HardwareItem, hardware_id)
@@ -1146,7 +1402,7 @@ def update_hardware_item(
     hardware_id: int,
     payload: HardwareItemUpdate,
     session: Session = Depends(get_session),
-    _: bool = Depends(require_auth),
+    _: Actor = Depends(require_permission("hardware:update")),
     _csrf: bool = Depends(require_csrf),
 ):
     item = session.get(HardwareItem, hardware_id)
@@ -1167,7 +1423,7 @@ def update_hardware_item(
 def delete_hardware_item(
     hardware_id: int,
     session: Session = Depends(get_session),
-    _: bool = Depends(require_auth),
+    _: Actor = Depends(require_permission("hardware:delete")),
     _csrf: bool = Depends(require_csrf),
 ):
     item = session.get(HardwareItem, hardware_id)
@@ -1221,7 +1477,7 @@ def list_hardware_movements(hardware_id: int, session: Session = Depends(get_ses
 @app.post("/makerworks/merch/sync")
 def sync_makerworks_merch_inventory(
     session: Session = Depends(get_session),
-    _: bool = Depends(require_auth),
+    _: Actor = Depends(require_permission("makerworks:sync")),
     _csrf: bool = Depends(require_csrf),
 ):
     return _sync_makerworks_merch_to_hardware(session)
@@ -1232,7 +1488,7 @@ def sync_makerworks_merch_inventory(
 def create_print_model(
     payload: PrintModelCreate,
     session: Session = Depends(get_session),
-    _: bool = Depends(require_auth),
+    _: Actor = Depends(require_permission("models:create")),
     _csrf: bool = Depends(require_csrf),
 ):
     data = payload.dict()
@@ -1296,7 +1552,7 @@ def update_print_model(
     model_id: int,
     payload: PrintModelUpdate,
     session: Session = Depends(get_session),
-    _: bool = Depends(require_auth),
+    _: Actor = Depends(require_permission("models:update")),
     _csrf: bool = Depends(require_csrf),
 ):
     model = session.get(PrintModel, model_id)
@@ -1319,7 +1575,7 @@ def update_print_model(
 def delete_print_model(
     model_id: int,
     session: Session = Depends(get_session),
-    _: bool = Depends(require_auth),
+    _: Actor = Depends(require_permission("models:delete")),
     _csrf: bool = Depends(require_csrf),
 ):
     model = session.get(PrintModel, model_id)
@@ -1552,9 +1808,157 @@ def fetch_printlab_filaments(_: bool = Depends(require_auth)):
     return payload
 
 
+@app.post("/reports/low-stock-digest/send")
+def send_low_stock_digest(
+    session: Session = Depends(get_session),
+    _: Actor = Depends(require_permission("digest:send")),
+    _csrf: bool = Depends(require_csrf),
+):
+    config = smtp_config_from_env()
+    if not config:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Low-stock digest SMTP is not configured.",
+        )
+    filament_entries = _low_stock_filament_entries(session)
+    hardware_entries = _low_stock_hardware_entries(session)
+    digest = build_low_stock_digest(filament=filament_entries, hardware=hardware_entries)
+    send_digest_email(config, digest)
+    return {
+        "recipient_count": len(config.recipients),
+        "filament_count": len(filament_entries),
+        "hardware_count": len(hardware_entries),
+        "sent_at": datetime.utcnow().isoformat(),
+    }
+
+
 @app.get("/health", tags=["system"])
 def healthcheck() -> dict[str, str]:
     return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
+
+
+def _read_upload_bytes(upload: UploadFile) -> bytes:
+    upload.file.seek(0)
+    content = upload.file.read()
+    upload.file.seek(0)
+    max_bytes = int(os.environ.get("STOCKWORKS_MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
+    if len(content) > max_bytes:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Uploaded file is too large.")
+    return content
+
+
+def _log_receipt_audit(
+    session: Session,
+    invoice: InboundInvoice,
+    actor: Actor,
+    event_type: str,
+    summary: str,
+    details: dict[str, Any] | None = None,
+) -> None:
+    if invoice.id is None:
+        session.flush()
+    session.add(
+        InboundReceiptAuditEvent(
+            invoice_id=invoice.id,
+            event_type=event_type,
+            actor_username=actor.username,
+            actor_role=actor.role,
+            summary=summary,
+            details_json=details or {},
+        )
+    )
+
+
+def _low_stock_filament_entries(session: Session) -> list[LowStockEntry]:
+    items = session.exec(
+        select(InventoryItem)
+        .options(selectinload(InventoryItem.material))
+        .where(InventoryItem.reorder_level > 0, InventoryItem.quantity_grams <= InventoryItem.reorder_level)
+        .order_by(InventoryItem.location)
+    ).all()
+    entries = []
+    for item in items:
+        material_name = item.material.name if item.material else f"Material {item.material_id}"
+        entries.append(
+            LowStockEntry(
+                name=material_name,
+                location=item.location,
+                quantity=float(item.quantity_grams or 0),
+                reorder_level=float(item.reorder_level or 0),
+                unit="g",
+            )
+        )
+    return entries
+
+
+def _low_stock_hardware_entries(session: Session) -> list[LowStockEntry]:
+    items = session.exec(
+        select(HardwareItem)
+        .where(HardwareItem.reorder_level > 0, HardwareItem.quantity_on_hand <= HardwareItem.reorder_level)
+        .order_by(HardwareItem.name)
+    ).all()
+    return [
+        LowStockEntry(
+            name=item.name,
+            location=item.bin_location or "",
+            quantity=float(item.quantity_on_hand or 0),
+            reorder_level=float(item.reorder_level or 0),
+            unit=item.unit_of_measure or "piece",
+        )
+        for item in items
+    ]
+
+
+def _receipt_label_html(
+    invoice: InboundInvoice,
+    line: InboundInvoiceLine,
+    material: Material,
+    barcode_value: str,
+) -> str:
+    barcode_url = f"/materials/{material.id}/barcode?value={html.escape(barcode_value)}"
+    label_lines = [
+        material.name,
+        f"{line.filament_type} {line.color}",
+        f"{line.spool_weight_grams}g",
+        f"Invoice {invoice.invoice_number}",
+        invoice.expected_location,
+    ]
+    return (
+        '<section class="label">'
+        f'<img src="{barcode_url}" alt="Barcode {html.escape(barcode_value)}" />'
+        + "".join(f"<div>{html.escape(str(value or ''))}</div>" for value in label_lines)
+        + f'<strong>{html.escape(barcode_value)}</strong>'
+        "</section>"
+    )
+
+
+def _barcode_label_document(title: str, body: str, truncated: bool) -> str:
+    truncated_notice = (
+        f"<p class='notice'>Limited to {STOCKWORKS_MAX_BATCH_LABELS} labels. Reprint remaining labels separately.</p>"
+        if truncated
+        else ""
+    )
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>{html.escape(title)}</title>
+  <style>
+    body {{ font-family: Arial, sans-serif; margin: 12px; }}
+    .sheet {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }}
+    .label {{ border: 1px solid #111; width: 180px; min-height: 130px; padding: 8px; break-inside: avoid; text-align: center; font-size: 12px; }}
+    .label img {{ max-width: 160px; height: 52px; object-fit: contain; }}
+    .label strong {{ display: block; margin-top: 4px; font-size: 11px; }}
+    .notice, .empty {{ color: #555; }}
+    @media print {{ button, .notice {{ display: none; }} body {{ margin: 0; }} }}
+  </style>
+</head>
+<body>
+  <button onclick="window.print()">Print labels</button>
+  {truncated_notice}
+  <main class="sheet">{body}</main>
+</body>
+</html>"""
 
 
 def _ensure_material_exists(session: Session, material_id: int) -> None:

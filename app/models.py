@@ -1,7 +1,7 @@
 """SQLModel models for the StockWorks domain."""
 import json
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from pydantic import field_validator
 from sqlalchemy import Column
@@ -159,6 +159,7 @@ class InboundInvoice(InboundInvoiceBase, table=True):
     verified_at: Optional[datetime] = Field(default=None, index=True)
 
     lines: List["InboundInvoiceLine"] = Relationship(back_populates="invoice")
+    audit_events: List["InboundReceiptAuditEvent"] = Relationship(back_populates="invoice")
 
 
 class InboundInvoiceLineBase(SQLModel):
@@ -199,6 +200,27 @@ class InboundInvoiceRead(InboundInvoiceBase):
     packing_slip_uploaded_at: Optional[datetime] = None
     verified_at: Optional[datetime] = None
     lines: List[InboundInvoiceLineRead] = Field(default_factory=list)
+
+
+class InboundReceiptAuditEventBase(SQLModel):
+    invoice_id: int = Field(foreign_key="inboundinvoice.id", index=True)
+    event_type: str = Field(index=True)
+    actor_username: str = Field(index=True)
+    actor_role: str = Field(index=True)
+    summary: str
+    details_json: Optional[dict[str, Any]] = Field(default=None, sa_column=Column(JSON, nullable=True))
+
+
+class InboundReceiptAuditEvent(InboundReceiptAuditEventBase, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+
+    invoice: Optional[InboundInvoice] = Relationship(back_populates="audit_events")
+
+
+class InboundReceiptAuditEventRead(InboundReceiptAuditEventBase):
+    id: int
+    created_at: datetime
 
 
 class InboundInvoiceVerifyLine(SQLModel):
