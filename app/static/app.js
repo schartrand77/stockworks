@@ -2826,7 +2826,7 @@ function renderBambuView() {
       countLabel: "Offline",
       slotState: "Offline",
       slotLabel: "Waiting for printer data",
-      slotMeta: "Start PrintLab on port 8080 or update PRINTLAB_BASE_URL.",
+      slotMeta: "Use http://PrintLab:8080 on a shared Unraid Docker network, or the Unraid host IP and mapped port.",
     });
     return;
   }

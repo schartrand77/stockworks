@@ -1,8 +1,10 @@
 import unittest
+import base64
 
 from app.authz import Actor, resolve_actor, role_can
 from app.csv_tools import export_material_rows, parse_material_csv
 from app.email_digest import LowStockEntry, build_low_stock_digest, smtp_config_from_env
+from app.printlab import PrintLabClient
 
 
 class AuthzTests(unittest.TestCase):
@@ -56,6 +58,20 @@ class EmailDigestTests(unittest.TestCase):
     def test_smtp_config_requires_core_values(self):
         env = {"SMTP_HOST": "smtp.example.com", "LOW_STOCK_DIGEST_RECIPIENTS": "ops@example.com"}
         self.assertIsNone(smtp_config_from_env(env))
+
+
+class PrintLabClientTests(unittest.TestCase):
+    def test_builds_basic_auth_header_from_username_and_password(self):
+        client = PrintLabClient(
+            base_url="http://printlab:8080",
+            username="admin",
+            password="secret",
+        )
+
+        headers = client._build_request_headers()
+
+        expected = base64.b64encode(b"admin:secret").decode("ascii")
+        self.assertEqual(headers["Authorization"], f"Basic {expected}")
 
 
 if __name__ == "__main__":

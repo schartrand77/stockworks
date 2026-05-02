@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import base64
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse, urlunparse
 
@@ -29,12 +30,16 @@ class PrintLabClient:
         api_key: Optional[str] = None,
         api_auth_header: Optional[str] = None,
         bearer_token: Optional[str] = None,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
         timeout: float = 20.0,
     ):
         self.base_url = (base_url or "").rstrip("/")
         self.api_key = (api_key or "").strip()
         self.api_auth_header = (api_auth_header or "").strip() or "X-API-Key"
         self.bearer_token = (bearer_token or "").strip()
+        self.username = (username or "").strip()
+        self.password = password or ""
         self._timeout = timeout
         self._clients: Dict[str, httpx.Client] = {}
 
@@ -60,6 +65,9 @@ class PrintLabClient:
             merged[self.api_auth_header] = self.api_key
         if self.bearer_token:
             merged["Authorization"] = f"Bearer {self.bearer_token}"
+        elif self.username and self.password:
+            token = base64.b64encode(f"{self.username}:{self.password}".encode("utf-8")).decode("ascii")
+            merged["Authorization"] = f"Basic {token}"
         return merged
 
     def _build_alternate_base_url(self) -> Optional[str]:
@@ -95,6 +103,8 @@ class PrintLabClient:
         return (
             f"Failed to contact PrintLab. Tried: {attempted}. "
             "If StockWorks is running on localhost, set PRINTLAB_BASE_URL to http://localhost:8080. "
+            "On Unraid with a shared Docker network, use http://PrintLab:8080; "
+            "on bridge networking, use http://<unraid-ip>:<mapped-printlab-port>. "
             f"Original error: {exc}"
         )
 
@@ -133,7 +143,10 @@ class PrintLabClient:
         host_label = f" from {host}" if host else ""
         hint = ""
         if status_code in {502, 503, 504}:
-            hint = " Upstream PrintLab service is unavailable."
+            hint = (
+                " Upstream PrintLab service is unavailable. On Unraid, verify StockWorks and PrintLab share a Docker "
+                "network and PRINTLAB_BASE_URL uses the PrintLab container URL, or use the Unraid host IP and mapped port."
+            )
         if host and "makerworks" in host.lower():
             hint += " Verify PRINTLAB_BASE_URL points to your PrintLab instance."
         return f"{operation} failed with HTTP {status_label}{reason_label}{host_label}.{hint}"
@@ -151,7 +164,8 @@ class PrintLabClient:
         response = self._request(method, path)
         if response.status_code in {401, 403}:
             raise PrintLabAuthenticationError(
-                "PrintLab rejected the request. Configure PRINTLAB_API_KEY or PRINTLAB_BEARER_TOKEN."
+                "PrintLab rejected the request. Configure PRINTLAB_API_KEY, PRINTLAB_BEARER_TOKEN, "
+                "or PRINTLAB_USERNAME and PRINTLAB_PASSWORD."
             )
         try:
             response.raise_for_status()
@@ -205,5 +219,7 @@ def get_printlab_client() -> PrintLabClient:
             api_key=os.environ.get("PRINTLAB_API_KEY"),
             api_auth_header=os.environ.get("PRINTLAB_API_AUTH_HEADER"),
             bearer_token=os.environ.get("PRINTLAB_BEARER_TOKEN"),
+            username=os.environ.get("PRINTLAB_USERNAME"),
+            password=os.environ.get("PRINTLAB_PASSWORD"),
         )
     return _PRINTLAB_CLIENT
