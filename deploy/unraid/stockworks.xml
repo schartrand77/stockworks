@@ -3,7 +3,7 @@
   <Name>StockWorks</Name>
   <Repository>stockworks:latest</Repository>
   <Registry>https://github.com/steph/stockworks</Registry>
-  <Network>bridge</Network>
+  <Network>makerworks-net</Network>
   <Shell>bash</Shell>
   <Privileged>false</Privileged>
   <Support>https://github.com/steph/stockworks/issues</Support>
@@ -20,15 +20,16 @@
   <Config Name="PGID" Target="PGID" Default="100" Description="Group ID that owns files written inside the container" Type="Variable" Display="advanced" Required="true" Mask="false" />
   <Config Name="UMASK" Target="UMASK" Default="002" Description="File creation mask applied before StockWorks starts" Type="Variable" Display="advanced" Required="false" Mask="false" />
   <Config Name="Timezone" Target="TZ" Default="UTC" Description="Timezone used for logs" Type="Variable" Display="always" Required="true" Mask="false" />
-  <Config Name="Database URL" Target="DATABASE_URL" Default="" Description="Optional PostgreSQL DSN shared with MakerWorks/OrderWorks (leave blank for SQLite)" Type="Variable" Display="always" Required="false" Mask="true" />
+  <Config Name="Database URL" Target="DATABASE_URL" Default="" Description="Optional PostgreSQL DSN shared with MakerWorks/OrderWorks (leave blank for SQLite). If the URL contains ?schema=orderworks, StockWorks keeps its own tables out of the OrderWorks schema unless STOCKWORKS_DB_SCHEMA is set." Type="Variable" Display="always" Required="false" Mask="true" />
+  <Config Name="StockWorks DB Schema" Target="STOCKWORKS_DB_SCHEMA" Default="" Description="Optional explicit PostgreSQL schema for StockWorks-owned tables. Leave blank to preserve existing public-schema installs." Type="Variable" Display="advanced" Required="false" Mask="false" />
   <Config Name="Data Directory" Target="STOCKWORKS_DATA_DIR" Default="/data" Description="Location inside the container that holds the SQLite file" Type="Variable" Display="advanced" Required="true" Mask="false" />
   <Config Name="Database Filename" Target="STOCKWORKS_DB_FILENAME" Default="app.db" Description="SQLite filename stored under STOCKWORKS_DATA_DIR" Type="Variable" Display="advanced" Required="true" Mask="false" />
   <Config Name="Admin Username" Target="ADMIN_USERNAME" Default="admin" Description="Credential required to log into the StockWorks UI" Type="Variable" Display="always" Required="true" Mask="false" />
   <Config Name="Admin Password" Target="ADMIN_PASSWORD" Default="" Description="Credential required to log into the StockWorks UI (12+ characters)" Type="Variable" Display="always" Required="true" Mask="true" />
   <Config Name="Secret Key" Target="SECRET_KEY" Default="" Description="Secret used to sign session cookies (32+ characters)" Type="Variable" Display="always" Required="true" Mask="true" />
   <Config Name="HTTPS-Only Session Cookie" Target="SESSION_HTTPS_ONLY" Default="0" Description="Set to 1 when the app is accessed via HTTPS so login cookies are marked Secure" Type="Variable" Display="advanced" Required="false" Mask="false" />
-  <Config Name="OrderWorks Base URL" Target="ORDERWORKS_BASE_URL" Default="" Description="Optional OrderWorks dashboard URL used for \"Open\" links" Type="Variable" Display="advanced" Required="false" Mask="false" />
-  <Config Name="PrintLab Base URL" Target="PRINTLAB_BASE_URL" Default="" Description="Optional PrintLab URL used to read loaded AMS trays" Type="Variable" Display="advanced" Required="false" Mask="false" />
+  <Config Name="OrderWorks Base URL" Target="ORDERWORKS_BASE_URL" Default="" Description="Optional OrderWorks dashboard URL used for Open links" Type="Variable" Display="advanced" Required="false" Mask="false" />
+  <Config Name="PrintLab Base URL" Target="PRINTLAB_BASE_URL" Default="http://PrintLab:8080" Description="Optional PrintLab URL used to read loaded AMS trays. Use the PrintLab container name when all Works containers share makerworks-net." Type="Variable" Display="advanced" Required="false" Mask="false" />
   <Config Name="PrintLab API Key" Target="PRINTLAB_API_KEY" Default="" Description="Optional API key for PrintLab API access" Type="Variable" Display="advanced" Required="false" Mask="true" />
   <Config Name="PrintLab Bearer Token" Target="PRINTLAB_BEARER_TOKEN" Default="" Description="Optional bearer token for PrintLab API access" Type="Variable" Display="advanced" Required="false" Mask="true" />
   <Config Name="PrintLab API Auth Header" Target="PRINTLAB_API_AUTH_HEADER" Default="X-API-Key" Description="Header name PrintLab expects for PRINTLAB_API_KEY" Type="Variable" Display="advanced" Required="false" Mask="false" />
