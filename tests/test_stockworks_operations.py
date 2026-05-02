@@ -1,5 +1,7 @@
 import unittest
 import base64
+import re
+from pathlib import Path
 
 from app.authz import Actor, resolve_actor, role_can
 from app.csv_tools import export_material_rows, parse_material_csv
@@ -72,6 +74,23 @@ class PrintLabClientTests(unittest.TestCase):
 
         expected = base64.b64encode(b"admin:secret").decode("ascii")
         self.assertEqual(headers["Authorization"], f"Basic {expected}")
+
+
+class StaticAssetTests(unittest.TestCase):
+    def test_ams_slots_use_compact_dimensions_for_many_printers(self):
+        css = Path("app/static/styles.css").read_text(encoding="utf-8")
+
+        grid_rule = re.search(r"\.ams-slot-grid\s*\{(?P<body>[^}]*)\}", css, re.S)
+        spool_rule = re.search(r"\.ams-slot-spool\s*\{(?P<body>[^}]*)\}", css, re.S)
+        self.assertIsNotNone(grid_rule)
+        self.assertIsNotNone(spool_rule)
+
+        min_track = re.search(r"minmax\((?P<size>\d+)px,\s*1fr\)", grid_rule.group("body"))
+        spool_width = re.search(r"width:\s*(?P<size>\d+)px", spool_rule.group("body"))
+        self.assertIsNotNone(min_track)
+        self.assertIsNotNone(spool_width)
+        self.assertLessEqual(int(min_track.group("size")), 112)
+        self.assertLessEqual(int(spool_width.group("size")), 38)
 
 
 if __name__ == "__main__":
