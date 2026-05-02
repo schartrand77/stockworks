@@ -4,6 +4,26 @@ StockWorks is a simple tool for keeping track of materials in a 3D printing shop
 
 If you can use a web page, you can use StockWorks.
 
+## Suite demo walkthrough
+
+StockWorks participates in the MakerWorks suite demo as the inventory and material-intelligence app. The walkthrough uses synthetic sample data to show inventory levels, material reservations, hardware/merch stock, reporting, and incoming MakerWorks demand.
+
+The screenshots below are safe public demo captures. They do not contain real customer records, private inventory counts, production URLs, or secrets.
+
+### Inventory planning
+
+![StockWorks inventory with synthetic sample stock](docs/assets/suite-screenshots/stockworks-02-inventory.png)
+
+### Material transactions
+
+![StockWorks movement history with synthetic transactions](docs/assets/suite-screenshots/stockworks-04-movements.png)
+
+### Hardware and reports
+
+![StockWorks hardware and merch inventory](docs/assets/suite-screenshots/stockworks-03-hardware.png)
+
+![StockWorks synthetic reporting dashboard](docs/assets/suite-screenshots/stockworks-06-reports.png)
+
 ## Quick start
 1) Open a web browser.
 2) Go to `http://localhost:8000/`
