@@ -1,18 +1,18 @@
 <?xml version="1.0"?>
 <Container version="2">
   <Name>StockWorks</Name>
-  <Repository>stockworks:latest</Repository>
-  <Registry>https://github.com/steph/stockworks</Registry>
+  <Repository>ghcr.io/schartrand77/stockworks:latest</Repository>
+  <Registry>https://github.com/schartrand77/stockworks/pkgs/container/stockworks</Registry>
   <Network>makerworks-net</Network>
   <Shell>bash</Shell>
   <Privileged>false</Privileged>
-  <Support>https://github.com/steph/stockworks/issues</Support>
-  <Project>https://github.com/steph/stockworks</Project>
+  <Support>https://github.com/schartrand77/stockworks/issues</Support>
+  <Project>https://github.com/schartrand77/stockworks</Project>
   <Overview>StockWorks is a FastAPI-powered inventory and quoting tool for 3D-printing studios.</Overview>
   <Category>Productivity:Tools;Inventory:Management</Category>
   <WebUI>http://[IP]:[PORT:8000]/</WebUI>
-  <TemplateURL>https://raw.githubusercontent.com/steph/stockworks/main/deploy/unraid/stockworks.xml</TemplateURL>
-  <Icon>https://raw.githubusercontent.com/steph/stockworks/main/app/static/icon-192.png</Icon>
+  <TemplateURL>https://raw.githubusercontent.com/schartrand77/stockworks/main/deploy/unraid/stockworks.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/schartrand77/stockworks/main/app/static/icon-192.png</Icon>
   <ExtraParams>--restart unless-stopped</ExtraParams>
   <Config Name="Web UI Port" Target="8000" Default="8000" Mode="tcp" Description="Container port exposed by the FastAPI server" Type="Port" Display="always" Required="true" Mask="false" />
   <Config Name="Appdata Storage" Target="/data" Default="/mnt/user/appdata/stockworks" Description="Host path that stores the SQLite database and attachments" Type="Path" Display="always" Required="true" Mask="false" />
