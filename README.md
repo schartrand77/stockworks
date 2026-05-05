@@ -1,6 +1,6 @@
 # StockWorks - Everyday User Manual
 
-StockWorks is a simple tool for keeping track of materials in a 3D printing shop. It helps you see what you have, what is running low, and what jobs are coming in from MakerWorks and OrderWorks.
+StockWorks is a simple tool for keeping track of materials in a 3D printing shop. It helps you see what you have, what is running low, and what jobs are coming in from MakerWorks.
 
 If you can use a web page, you can use StockWorks.
 
@@ -36,7 +36,7 @@ The screenshots below are safe public demo captures. They do not contain real cu
 - **Sync merch from MakerWorks**: import merch templates, then keep quantity/catalog updates synced with MakerWorks.
 - **Show stock changes**: every add and remove is recorded.
 - **Create quotes**: build a material list and price estimate.
-- **Show incoming jobs**: live orders from MakerWorks and OrderWorks.
+- **Show incoming jobs**: live orders from MakerWorks.
 
 ## The main screens (what they mean)
 - **Dashboard**: a quick summary of items that need attention.
@@ -44,7 +44,7 @@ The screenshots below are safe public demo captures. They do not contain real cu
 - **Hardware**: all non-filament items and quantities.
 - **Movements**: a history of changes so you can see who did what and when.
 - **Quotes**: tools for pricing and estimating materials.
-- **Orders**: the live job queue from MakerWorks and OrderWorks.
+- **Orders**: the live job queue from MakerWorks.
 
 ## Barcode scanning on mobile
 StockWorks can scan barcodes using your phone or tablet camera.
@@ -70,26 +70,93 @@ These pictures show what the main screens look like.
 ### Reports
 ![StockWorks reports screen](public/screenshots/swreports.png)
 
-## Using the Orders screen (MakerWorks and OrderWorks)
+## Using the Orders screen
 The Orders screen shows the job list so production and inventory stay in sync.
 
 ### How StockWorks gets the orders
-There are two ways your admin can connect StockWorks:
-
-1) **Direct database link (best option)**
-   - StockWorks reads the job list directly from the MakerWorks database.
-   - This is automatic once it is connected.
-   - The Orders screen fills in on its own.
-
-2) **OrderWorks login (backup option)**
-   - If the database connection is not available, StockWorks can log in to OrderWorks.
-   - It uses an admin username or email and password set by your admin.
+StockWorks reads the job list directly from the MakerWorks Postgres database.
+This is automatic once `DATABASE_URL` points at the MakerWorks database.
 
 
 ### What you will see in Orders
 - A list of current jobs.
-- Each job may include a link to open the same order in OrderWorks.
 - If something is missing, you will see a message explaining what is needed.
+
+## Unraid MakerWorks database setup
+When StockWorks runs on Unraid with MakerWorks, put the StockWorks container on the
+same Docker network as the MakerWorks Postgres container. Use the Postgres
+container name in the URL, not `localhost`.
+
+For the common MakerWorks database container named `postgres`, set:
+
+```env
+DATABASE_URL=postgresql://postgres:postgres@postgres:5432/makerworks?schema=public
+STOCKWORKS_DB_SCHEMA=
+```
+
+`DATABASE_URL` points StockWorks at the MakerWorks Postgres database. The
+`?schema=public` value means StockWorks uses the existing `public` schema for its
+own inventory tables and can also read MakerWorks public tables.
+
+If your StockWorks inventory tables were previously created in another schema,
+set `STOCKWORKS_DB_SCHEMA` to that schema. For example, if an older install used
+a legacy schema name:
+
+```env
+DATABASE_URL=postgresql://postgres:postgres@postgres:5432/makerworks?schema=legacy_schema_name
+STOCKWORKS_DB_SCHEMA=legacy_schema_name
+```
+
+For current MakerWorks/StockWorks installs, prefer `public` unless you confirm
+your existing StockWorks rows are in another schema. `STOCKWORKS_DB_SCHEMA`
+controls where StockWorks-owned tables such as `material`, `inventoryitem`, and
+`hardwareitem` live.
+
+To check where existing StockWorks tables are before reinstalling, run this in
+the MakerWorks Postgres database:
+
+```sql
+SELECT table_schema, table_name
+FROM information_schema.tables
+WHERE table_name IN (
+  'material',
+  'inventoryitem',
+  'stockmovement',
+  'hardwareitem',
+  'hardwaremovement',
+  'printmodel',
+  'printmodelsale',
+  'printmodelmovement',
+  'jobs'
+)
+ORDER BY table_schema, table_name;
+```
+
+Use the schema that contains the current StockWorks data. If multiple schemas
+have StockWorks tables, compare row counts:
+
+```sql
+SELECT schemaname, relname, n_live_tup
+FROM pg_stat_user_tables
+WHERE relname IN (
+  'material',
+  'inventoryitem',
+  'stockmovement',
+  'hardwareitem',
+  'hardwaremovement',
+  'printmodel',
+  'printmodelsale',
+  'printmodelmovement'
+)
+ORDER BY schemaname, relname;
+```
+
+Also set a real session secret. StockWorks will not start if `SECRET_KEY` is
+shorter than 32 characters:
+
+```env
+SECRET_KEY=replace-with-a-random-32-plus-character-secret
+```
 
 ## PrintLab filament sync (loaded trays)
 StockWorks can also read loaded AMS trays from PrintLab so you can quickly see what filament is currently mounted.
@@ -125,7 +192,5 @@ Merch records support variant details such as category, color, size, style, and 
 If you set up StockWorks:
 - Open the app at `http://localhost:8000/`
 - Data is stored in `stockworks/data/`
-- Orders integration needs either:
-  - A MakerWorks database link, or
-  - OrderWorks login details and the OrderWorks web address
+- Orders integration needs a MakerWorks database link
 
