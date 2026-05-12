@@ -1078,8 +1078,8 @@
         <section class="card tab-panel" id="orderworks-panel" role="tabpanel" aria-labelledby="tab-orderworks" hidden>
         <div class="card-header">
           <div>
-            <h2>OrderWorks Jobs</h2>
-            <p>Review the MakerWorks queue without leaving StockWorks.</p>
+            <h2>MakerWorks Jobs</h2>
+            <p>Review the PrintLab production queue without leaving StockWorks.</p>
           </div>
           <div class="card-actions">
             <button id="orderworks-refresh" type="button">Refresh jobs</button>
@@ -1091,9 +1091,9 @@
             <table id="orderworks-table">
               <thead>
                 <tr>
-                  <th>Job ID</th>
+                  <th>Order</th>
                   <th>Status</th>
-                  <th>Fulfillment</th>
+                  <th>PrintLab</th>
                   <th>Total</th>
                   <th>Created</th>
                   <th>Items</th>
@@ -1143,7 +1143,7 @@
             <div class="report-callout" id="report-usage"></div>
           </section>
           <section class="report-block">
-            <h3>OrderWorks summary</h3>
+            <h3>MakerWorks summary</h3>
             <div class="report-metrics" id="report-orderworks-metrics"></div>
           </section>
           <section class="report-block">
@@ -1228,7 +1228,7 @@
             </section>
             <section class="settings-block runtime-settings-block admin-only">
               <h3>OrderWorks fallback</h3>
-              <p>Use the admin API when shared database job reads are unavailable.</p>
+              <p>Legacy settings retained for older installs; Orders now reads the MakerWorks production queue.</p>
               <label>
                 Base URL
                 <input id="runtime-orderworks-base-url" type="url" placeholder="http://orderworks:3000" autocomplete="off" />

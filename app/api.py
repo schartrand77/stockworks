@@ -43,14 +43,7 @@ from .db import get_session, init_db
 from .email_digest import LowStockEntry, build_low_stock_digest, send_digest_email, smtp_config_from_env
 from .filament_types import bambu_x1c_filament_types
 from .normalization import normalize_barcode, normalize_sku
-from .orderworks import (
-    OrderWorksAuthenticationError,
-    OrderWorksDatabaseUnavailableError,
-    OrderWorksIntegrationError,
-    OrderWorksNotConfiguredError,
-    get_orderworks_client,
-    list_orderworks_jobs_via_database,
-)
+from .makerworks_queue import MakerWorksQueueError, list_makerworks_production_jobs
 from .settings import (
     ALLOWED_SETTINGS,
     effective_settings_map,
@@ -1745,35 +1738,20 @@ def calculate_quote(
     return PricingResponse(pricing=breakdown, material_snapshot=MaterialRead.from_orm(material))
 
 
+@app.get("/makerworks/jobs")
 @app.get("/orderworks/jobs")
-def fetch_orderworks_jobs(
+def fetch_makerworks_jobs(
     _: bool = Depends(require_auth),
     session: Session = Depends(get_session),
 ):
-    runtime_settings = load_runtime_settings(session)
-    base_url_override = get_effective_setting("ORDERWORKS_BASE_URL", runtime_settings)
     try:
-        jobs = list_orderworks_jobs_via_database(session)
-    except OrderWorksDatabaseUnavailableError as db_error:
-        client = get_orderworks_client(runtime_settings)
-        if not client.is_configured:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"{db_error}. Provide ORDERWORKS_* credentials for HTTP fallback or verify DATABASE_URL.",
-            )
-        try:
-            jobs = client.list_jobs()
-        except OrderWorksNotConfiguredError:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="OrderWorks integration is not configured.",
-            )
-        except OrderWorksAuthenticationError as exc:
-            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
-        except OrderWorksIntegrationError as exc:
-            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
-        return {"jobs": jobs, "base_url": client.base_url}
-    return {"jobs": jobs, "base_url": base_url_override}
+        jobs = list_makerworks_production_jobs(session)
+    except MakerWorksQueueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"{exc}. Verify DATABASE_URL points at the MakerWorks database.",
+        )
+    return {"jobs": jobs, "base_url": ""}
 
 
 @app.get("/printlab/filaments")

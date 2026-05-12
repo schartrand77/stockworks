@@ -1378,7 +1378,7 @@ async function loadOrderWorksJobs({ silent = false, suppressReports = false } = 
     return;
   }
   try {
-    const payload = await api("/orderworks/jobs");
+    const payload = await api("/makerworks/jobs");
     state.orderworksJobs = Array.isArray(payload.jobs) ? payload.jobs : [];
     state.orderworksError = null;
     state.orderworksConfigured = true;
@@ -1387,7 +1387,7 @@ async function loadOrderWorksJobs({ silent = false, suppressReports = false } = 
     console.error(error);
     state.orderworksJobs = [];
     state.orderworksBaseUrl = "";
-    state.orderworksError = error && error.message ? error.message : "Unable to sync OrderWorks jobs.";
+    state.orderworksError = error && error.message ? error.message : "Unable to sync MakerWorks jobs.";
     state.orderworksConfigured = error && Number(error.status) === 503 ? false : true;
     if (!silent) {
       setMessage(state.orderworksError, "error");
@@ -2518,7 +2518,7 @@ function renderOrderWorksReports() {
   };
 
   if (!state.orderworksConfigured) {
-    setFallback("OrderWorks integration is not configured.");
+    setFallback("MakerWorks production queue is not configured.");
     return;
   }
   if (state.orderworksError) {
@@ -2528,7 +2528,7 @@ function renderOrderWorksReports() {
 
   const jobs = Array.isArray(state.orderworksJobs) ? state.orderworksJobs : [];
   if (!jobs.length) {
-    setFallback("No OrderWorks jobs available.");
+    setFallback("No MakerWorks jobs available.");
     return;
   }
 
@@ -2711,7 +2711,7 @@ function renderOrderWorks() {
   if (orderworksStatusEl) {
     if (!state.orderworksConfigured) {
       orderworksStatusEl.textContent =
-        "OrderWorks integration is not configured. Connect StockWorks to the MakerWorks database or provide ORDERWORKS_* credentials.";
+        "MakerWorks production queue is not configured. Connect StockWorks to the MakerWorks database.";
       orderworksStatusEl.classList.remove("error");
       orderworksStatusEl.classList.add("muted");
     } else if (state.orderworksError) {
@@ -2720,14 +2720,14 @@ function renderOrderWorks() {
       orderworksStatusEl.classList.remove("muted");
     } else {
       orderworksStatusEl.textContent = state.orderworksJobs.length
-        ? `Showing ${state.orderworksJobs.length} job${state.orderworksJobs.length === 1 ? "" : "s"} from OrderWorks.`
-        : "No jobs returned from OrderWorks.";
+        ? `Showing ${state.orderworksJobs.length} MakerWorks job${state.orderworksJobs.length === 1 ? "" : "s"}.`
+        : "No jobs returned from MakerWorks.";
       orderworksStatusEl.classList.remove("error");
       orderworksStatusEl.classList.add("muted");
     }
   }
   if (!state.orderworksConfigured) {
-    orderworksTableBody.innerHTML = `<tr><td colspan="7" class="muted">Configure OrderWorks credentials to sync jobs.</td></tr>`;
+    orderworksTableBody.innerHTML = `<tr><td colspan="7" class="muted">Connect StockWorks to the MakerWorks database to sync jobs.</td></tr>`;
     return;
   }
   if (state.orderworksError) {
@@ -2742,18 +2742,19 @@ function renderOrderWorks() {
   orderworksTableBody.innerHTML = state.orderworksJobs
     .map((job) => {
       const status = formatOrderStatus(job.status);
-      const fulfillment = formatOrderStatus(job.fulfillmentStatus);
+      const fulfillment = formatOrderStatus(job.printLabStatus || job.fulfillmentStatus);
       const total = formatCurrencyValue(job.totalCents, job.currency);
-      const createdAt = job.makerworksCreatedAt || job.createdAt;
+      const createdAt = job.createdAt || job.makerworksCreatedAt;
       const createdLabel = formatTimestamp(createdAt);
       const lineItemsSummary = summarizeLineItems(job.lineItems);
-      const jobLinkId = job.paymentIntentId || job.id;
+      const jobLinkId = job.id;
+      const jobLabel = job.orderLabel || job.id;
       const jobLink =
         orderworksBase && jobLinkId ? `${orderworksBase}/jobs/${encodeURIComponent(jobLinkId)}` : null;
       const safeJobLink = jobLink ? escapeHtml(jobLink) : "";
       return `
         <tr>
-          <td>${escapeHtml(job.id)}</td>
+          <td>${escapeHtml(jobLabel)}</td>
           <td>${escapeHtml(status)}</td>
           <td>${escapeHtml(fulfillment)}</td>
           <td>${escapeHtml(total)}</td>
@@ -4924,13 +4925,22 @@ function summarizeLineItems(lineItems) {
     if (!item || typeof item !== "object") {
       return "Line item";
     }
-    const description = typeof item.description === "string" ? item.description.trim() : "";
+    const description =
+      typeof item.description === "string"
+        ? item.description.trim()
+        : typeof item.modelTitle === "string"
+          ? item.modelTitle.trim()
+          : "";
     const material = typeof item.material === "string" ? item.material.trim() : "";
     const color = typeof item.color === "string" ? item.color.trim() : "";
     const details = [description || "Line item"];
+    const quantity = Number(item.quantity);
+    if (Number.isFinite(quantity) && quantity > 1) {
+      details[0] = `${quantity}x ${details[0]}`;
+    }
     if (material) details.push(material);
     if (color) details.push(color);
-    return details.join(" • ");
+    return details.join(" - ");
   });
   if (lineItems.length > 3) {
     parts.push(`+${lineItems.length - 3} more`);
