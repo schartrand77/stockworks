@@ -158,10 +158,16 @@ shorter than 32 characters:
 SECRET_KEY=replace-with-a-random-32-plus-character-secret
 ```
 
+## Minimal boot environment
+
+Keep startup, auth, database, storage, and safety limits in `.env`: `SECRET_KEY`, admin/shop login values, `STOCKWORKS_DATA_DIR`, optional `DATABASE_URL`, upload limits, session settings, and CORS/CSRF settings.
+
+PrintLab, OrderWorks HTTP fallback, and low-stock SMTP digest settings can be configured after login from **Settings**. Environment variables still work as legacy overrides and are used when no in-app value is saved.
+
 ## PrintLab filament sync (loaded trays)
 StockWorks can also read loaded AMS trays from PrintLab so you can quickly see what filament is currently mounted.
 
-Set these variables if you want that integration:
+Configure this in **Settings -> PrintLab integration** when possible. Legacy env overrides are:
 - `PRINTLAB_BASE_URL` (required for PrintLab sync)
 - `PRINTLAB_API_KEY` (optional, if PrintLab API auth is enabled)
 - `PRINTLAB_BEARER_TOKEN` (optional bearer auth token)
