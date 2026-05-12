@@ -51,7 +51,16 @@ from .orderworks import (
     get_orderworks_client,
     list_orderworks_jobs_via_database,
 )
+from .settings import (
+    ALLOWED_SETTINGS,
+    effective_settings_map,
+    get_effective_setting,
+    load_runtime_settings,
+    redact_settings,
+    validate_settings_payload,
+)
 from .models import (
+    AppSetting,
     HardwareItem,
     HardwareItemCreate,
     HardwareItemRead,
@@ -426,6 +435,46 @@ def require_csrf(
     _require_same_origin(request)
     _validate_csrf_token(request, csrf_header)
     return True
+
+
+@app.get("/settings/runtime")
+def get_runtime_settings(
+    _: Actor = Depends(require_permission("settings:manage")),
+    session: Session = Depends(get_session),
+):
+    return {"settings": redact_settings(load_runtime_settings(session))}
+
+
+@app.patch("/settings/runtime")
+def update_runtime_settings(
+    payload: dict[str, object],
+    _: Actor = Depends(require_permission("settings:manage")),
+    _csrf: bool = Depends(require_csrf),
+    session: Session = Depends(get_session),
+):
+    try:
+        parsed = validate_settings_payload(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    updated_keys: list[str] = []
+    for key, value in parsed.items():
+        definition = ALLOWED_SETTINGS[key]
+        setting = session.get(AppSetting, key)
+        if setting is None:
+            setting = AppSetting(
+                key=key,
+                category=str(definition["category"]),
+                secret=bool(definition["secret"]),
+            )
+        setting.value = value
+        setting.category = str(definition["category"])
+        setting.secret = bool(definition["secret"])
+        setting.updated_at = datetime.utcnow()
+        session.add(setting)
+        updated_keys.append(key)
+    session.commit()
+    return {"updated": updated_keys, "settings": redact_settings(load_runtime_settings(session))}
 
 
 def _credentials_valid(username: str, password: str) -> bool:
@@ -1701,11 +1750,12 @@ def fetch_orderworks_jobs(
     _: bool = Depends(require_auth),
     session: Session = Depends(get_session),
 ):
-    base_url_override = os.environ.get("ORDERWORKS_BASE_URL", "")
+    runtime_settings = load_runtime_settings(session)
+    base_url_override = get_effective_setting("ORDERWORKS_BASE_URL", runtime_settings)
     try:
         jobs = list_orderworks_jobs_via_database(session)
     except OrderWorksDatabaseUnavailableError as db_error:
-        client = get_orderworks_client()
+        client = get_orderworks_client(runtime_settings)
         if not client.is_configured:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -1728,10 +1778,13 @@ def fetch_orderworks_jobs(
 
 @app.get("/printlab/filaments")
 @app.get("/bambu-view/filaments")
-def fetch_printlab_filaments(_: bool = Depends(require_auth)):
+def fetch_printlab_filaments(
+    _: bool = Depends(require_auth),
+    session: Session = Depends(get_session),
+):
     trace_id = secrets.token_hex(4)
     _printlab_trace(trace_id, "start")
-    client = get_printlab_client()
+    client = get_printlab_client(load_runtime_settings(session))
     if not client.is_configured:
         _printlab_trace(trace_id, "not_configured")
         raise HTTPException(
@@ -1814,7 +1867,7 @@ def send_low_stock_digest(
     _: Actor = Depends(require_permission("digest:send")),
     _csrf: bool = Depends(require_csrf),
 ):
-    config = smtp_config_from_env()
+    config = smtp_config_from_env(effective_settings_map(load_runtime_settings(session)))
     if not config:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

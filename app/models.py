@@ -9,6 +9,14 @@ from sqlalchemy.types import JSON
 from sqlmodel import Field, Relationship, SQLModel
 
 
+class AppSetting(SQLModel, table=True):
+    key: str = Field(primary_key=True)
+    category: str = Field(index=True)
+    value: Optional[str] = None
+    secret: bool = Field(default=False)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class MaterialBase(SQLModel):
     name: str = Field(index=True)
     brand: Optional[str] = None

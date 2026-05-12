@@ -1210,6 +1210,74 @@
                 <div class="ams-empty-state muted">No PrintLab data loaded yet.</div>
               </div>
             </section>
+            <section class="settings-block runtime-settings-block admin-only">
+              <h3>PrintLab integration</h3>
+              <p>Connect StockWorks to PrintLab without editing environment variables.</p>
+              <label>
+                Base URL
+                <input id="runtime-printlab-base-url" type="url" placeholder="http://printlab:8080" autocomplete="off" />
+              </label>
+              <label>
+                API key
+                <input id="runtime-printlab-api-key" type="password" autocomplete="new-password" />
+              </label>
+              <label>
+                Bearer token
+                <input id="runtime-printlab-bearer-token" type="password" autocomplete="new-password" />
+              </label>
+            </section>
+            <section class="settings-block runtime-settings-block admin-only">
+              <h3>OrderWorks fallback</h3>
+              <p>Use the admin API when shared database job reads are unavailable.</p>
+              <label>
+                Base URL
+                <input id="runtime-orderworks-base-url" type="url" placeholder="http://orderworks:3000" autocomplete="off" />
+              </label>
+              <label>
+                Username
+                <input id="runtime-orderworks-username" type="text" autocomplete="username" />
+              </label>
+              <label>
+                Password
+                <input id="runtime-orderworks-password" type="password" autocomplete="new-password" />
+              </label>
+            </section>
+            <section class="settings-block runtime-settings-block admin-only">
+              <h3>Low-stock email digest</h3>
+              <p>Configure SMTP delivery for low-stock notifications.</p>
+              <label>
+                SMTP host
+                <input id="runtime-smtp-host" type="text" autocomplete="off" />
+              </label>
+              <label>
+                SMTP port
+                <input id="runtime-smtp-port" type="number" min="1" step="1" placeholder="587" />
+              </label>
+              <label>
+                SMTP username
+                <input id="runtime-smtp-username" type="text" autocomplete="username" />
+              </label>
+              <label>
+                SMTP password
+                <input id="runtime-smtp-password" type="password" autocomplete="new-password" />
+              </label>
+              <label>
+                From address
+                <input id="runtime-digest-from" type="email" autocomplete="email" />
+              </label>
+              <label>
+                Recipients
+                <input id="runtime-digest-recipients" type="text" placeholder="ops@example.com, shop@example.com" autocomplete="off" />
+              </label>
+              <label class="inline-setting">
+                <input id="runtime-smtp-use-tls" type="checkbox" />
+                Use TLS
+              </label>
+              <div class="settings-actions">
+                <button id="runtime-settings-save" type="button">Save integration settings</button>
+                <span id="runtime-settings-status" class="muted"></span>
+              </div>
+            </section>
             <section class="settings-block">
               <h3>Session</h3>
               <p>End your current StockWorks session.</p>

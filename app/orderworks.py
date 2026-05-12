@@ -13,6 +13,8 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session
 
+from .settings import get_effective_setting
+
 ORDERWORKS_SESSION_REFRESH_SECONDS = 60 * 60 * 6  # refresh every 6 hours
 
 
@@ -119,7 +121,13 @@ class OrderWorksClient:
 _ORDERWORKS_CLIENT: Optional[OrderWorksClient] = None
 
 
-def get_orderworks_client() -> OrderWorksClient:
+def get_orderworks_client(settings: Optional[Dict[str, str]] = None) -> OrderWorksClient:
+    if settings is not None:
+        return OrderWorksClient(
+            base_url=get_effective_setting("ORDERWORKS_BASE_URL", settings),
+            username=get_effective_setting("ORDERWORKS_ADMIN_USERNAME", settings),
+            password=get_effective_setting("ORDERWORKS_ADMIN_PASSWORD", settings),
+        )
     global _ORDERWORKS_CLIENT
     if _ORDERWORKS_CLIENT is None:
         _ORDERWORKS_CLIENT = OrderWorksClient(

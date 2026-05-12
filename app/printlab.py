@@ -8,6 +8,8 @@ from urllib.parse import urlparse, urlunparse
 
 import httpx
 
+from .settings import get_effective_setting
+
 
 class PrintLabIntegrationError(Exception):
     """Base error for integration failures."""
@@ -211,7 +213,16 @@ class PrintLabClient:
 _PRINTLAB_CLIENT: Optional[PrintLabClient] = None
 
 
-def get_printlab_client() -> PrintLabClient:
+def get_printlab_client(settings: Optional[Dict[str, str]] = None) -> PrintLabClient:
+    if settings is not None:
+        return PrintLabClient(
+            base_url=get_effective_setting("PRINTLAB_BASE_URL", settings),
+            api_key=get_effective_setting("PRINTLAB_API_KEY", settings),
+            api_auth_header=get_effective_setting("PRINTLAB_API_AUTH_HEADER", settings),
+            bearer_token=get_effective_setting("PRINTLAB_BEARER_TOKEN", settings),
+            username=get_effective_setting("PRINTLAB_USERNAME", settings),
+            password=get_effective_setting("PRINTLAB_PASSWORD", settings),
+        )
     global _PRINTLAB_CLIENT
     if _PRINTLAB_CLIENT is None:
         _PRINTLAB_CLIENT = PrintLabClient(

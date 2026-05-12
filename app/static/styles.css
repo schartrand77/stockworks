@@ -565,6 +565,25 @@ form.settings-actions {
   margin: 0;
 }
 
+.runtime-settings-block label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.runtime-settings-block .inline-setting {
+  flex-direction: row;
+  align-items: center;
+}
+
+.runtime-settings-block .inline-setting input {
+  width: auto;
+}
+
+.status-error {
+  color: var(--sap-danger);
+}
+
 .two-columns,
 .hardware-movements-grid,
 .model-sales-grid {

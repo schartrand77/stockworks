@@ -263,6 +263,23 @@ const reportOrderworksRevenueEl = document.getElementById("report-orderworks-rev
 const bambuViewRefreshBtn = document.getElementById("bambu-view-refresh");
 const bambuViewStatusEl = document.getElementById("bambu-view-status");
 const bambuViewGrid = document.getElementById("bambu-view-grid");
+const runtimeSettingsSaveBtn = document.getElementById("runtime-settings-save");
+const runtimeSettingsStatusEl = document.getElementById("runtime-settings-status");
+const runtimeSettingFields = {
+  PRINTLAB_BASE_URL: document.getElementById("runtime-printlab-base-url"),
+  PRINTLAB_API_KEY: document.getElementById("runtime-printlab-api-key"),
+  PRINTLAB_BEARER_TOKEN: document.getElementById("runtime-printlab-bearer-token"),
+  ORDERWORKS_BASE_URL: document.getElementById("runtime-orderworks-base-url"),
+  ORDERWORKS_ADMIN_USERNAME: document.getElementById("runtime-orderworks-username"),
+  ORDERWORKS_ADMIN_PASSWORD: document.getElementById("runtime-orderworks-password"),
+  SMTP_HOST: document.getElementById("runtime-smtp-host"),
+  SMTP_PORT: document.getElementById("runtime-smtp-port"),
+  SMTP_USERNAME: document.getElementById("runtime-smtp-username"),
+  SMTP_PASSWORD: document.getElementById("runtime-smtp-password"),
+  SMTP_USE_TLS: document.getElementById("runtime-smtp-use-tls"),
+  LOW_STOCK_DIGEST_FROM: document.getElementById("runtime-digest-from"),
+  LOW_STOCK_DIGEST_RECIPIENTS: document.getElementById("runtime-digest-recipients"),
+};
 const installButton = document.getElementById("install-app");
 let themeToggleBtn = null;
 let themeToggleLabelEl = null;
@@ -366,6 +383,9 @@ document.addEventListener("DOMContentLoaded", () => {
   syncFilamentViewControls();
   setMaterialColorDropdownOpen(false);
   safeAsync(loadFilamentTypes);
+  if (!isShopRole) {
+    safeAsync(loadRuntimeSettings);
+  }
   registerServiceWorker();
   refreshAll();
 });
@@ -706,6 +726,9 @@ function bindEvents() {
   }
   if (lowStockDigestSendBtn) {
     lowStockDigestSendBtn.addEventListener("click", () => safeAsync(sendLowStockDigest));
+  }
+  if (runtimeSettingsSaveBtn) {
+    runtimeSettingsSaveBtn.addEventListener("click", () => safeAsync(saveRuntimeSettings));
   }
   if (receiptPrintLabelsBtn) {
     receiptPrintLabelsBtn.addEventListener("click", printCurrentReceiptLabels);
@@ -4620,6 +4643,78 @@ function openBarcodePrintWindow({ title, barcodeUrl, labelLines, barcodeValue })
   printWindow.document.open();
   printWindow.document.write(html);
   printWindow.document.close();
+}
+
+function setRuntimeSettingsStatus(text, variant = "info") {
+  if (!runtimeSettingsStatusEl) {
+    return;
+  }
+  runtimeSettingsStatusEl.textContent = text || "";
+  runtimeSettingsStatusEl.classList.toggle("status-error", variant === "error");
+}
+
+function runtimeSettingValue(key) {
+  const field = runtimeSettingFields[key];
+  if (!field) {
+    return "";
+  }
+  if (field.type === "checkbox") {
+    return field.checked ? "1" : "0";
+  }
+  return String(field.value || "").trim();
+}
+
+function applyRuntimeSettings(settings) {
+  Object.entries(runtimeSettingFields).forEach(([key, field]) => {
+    if (!field) {
+      return;
+    }
+    const setting = settings?.[key] || {};
+    const value = typeof setting.value === "string" ? setting.value : "";
+    if (field.type === "checkbox") {
+      field.checked = value ? ["1", "true", "yes", "on"].includes(value.toLowerCase()) : true;
+      return;
+    }
+    if (setting.secret && setting.configured) {
+      field.value = "";
+      field.placeholder = "Configured";
+      return;
+    }
+    field.value = value;
+  });
+}
+
+async function loadRuntimeSettings() {
+  if (!runtimeSettingsSaveBtn) {
+    return;
+  }
+  const data = await api("/settings/runtime");
+  applyRuntimeSettings(data?.settings || {});
+  setRuntimeSettingsStatus("Settings loaded.");
+}
+
+async function saveRuntimeSettings() {
+  const payload = {};
+  Object.keys(runtimeSettingFields).forEach((key) => {
+    const field = runtimeSettingFields[key];
+    if (!field) {
+      return;
+    }
+    const value = runtimeSettingValue(key);
+    if (value || !field.placeholder) {
+      payload[key] = value;
+    }
+  });
+  runtimeSettingsSaveBtn.disabled = true;
+  setRuntimeSettingsStatus("Saving...");
+  try {
+    const data = await api("/settings/runtime", { method: "PATCH", body: payload });
+    applyRuntimeSettings(data?.settings || {});
+    setRuntimeSettingsStatus("Saved.");
+    showToast("Integration settings saved.", "success");
+  } finally {
+    runtimeSettingsSaveBtn.disabled = false;
+  }
 }
 
 async function api(path, { method = "GET", body, headers } = {}) {
