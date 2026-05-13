@@ -1,12 +1,12 @@
 const state = {
   materials: [],
   inventory: [],
-  inboundInvoices: [],
+  businessDocuments: [],
   hardware: [],
   models: [],
   currentMaterialId: null,
   currentInventoryId: null,
-  currentInboundInvoiceId: null,
+  currentBusinessDocumentId: null,
   currentMovementItemId: null,
   currentHardwareId: null,
   currentMerchId: null,
@@ -105,18 +105,8 @@ const inventoryMaterialScanBtn = document.getElementById("inventory-material-sca
 const receiptsRefreshBtn = document.getElementById("receipts-refresh");
 const receiptUploadForm = document.getElementById("receipt-upload-form");
 const receiptInvoiceFileInput = document.getElementById("receipt-invoice-file");
-const receiptLocationInput = document.getElementById("receipt-location");
-const receiptReorderLevelInput = document.getElementById("receipt-reorder-level");
 const receiptsTableBody = document.querySelector("#receipts-table tbody");
 const receiptDetailSummary = document.getElementById("receipt-detail-summary");
-const packingSlipForm = document.getElementById("packing-slip-form");
-const receiptPackingSlipFileInput = document.getElementById("receipt-packing-slip-file");
-const receiptVerifyForm = document.getElementById("receipt-verify-form");
-const receiptVerifyLocationInput = document.getElementById("receipt-verify-location");
-const receiptVerifyNoteInput = document.getElementById("receipt-verify-note");
-const receiptLinesTableBody = document.querySelector("#receipt-lines-table tbody");
-const receiptAuditList = document.getElementById("receipt-audit-list");
-const receiptPrintLabelsBtn = document.getElementById("receipt-print-labels");
 const materialsImportTrigger = document.getElementById("materials-import-trigger");
 const materialsImportFile = document.getElementById("materials-import-file");
 const hardwareImportTrigger = document.getElementById("hardware-import-trigger");
@@ -697,7 +687,7 @@ function bindEvents() {
   materialRefreshBtn.addEventListener("click", () => safeAsync(loadMaterials));
   inventoryRefreshBtn.addEventListener("click", () => safeAsync(loadInventory));
   if (receiptsRefreshBtn) {
-    receiptsRefreshBtn.addEventListener("click", () => safeAsync(loadInboundInvoices));
+    receiptsRefreshBtn.addEventListener("click", () => safeAsync(loadBusinessDocuments));
   }
   if (modelsRefreshBtn) {
     modelsRefreshBtn.addEventListener("click", () => safeAsync(loadModels));
@@ -729,9 +719,6 @@ function bindEvents() {
   }
   if (runtimeSettingsSaveBtn) {
     runtimeSettingsSaveBtn.addEventListener("click", () => safeAsync(saveRuntimeSettings));
-  }
-  if (receiptPrintLabelsBtn) {
-    receiptPrintLabelsBtn.addEventListener("click", printCurrentReceiptLabels);
   }
   if (materialsImportTrigger && materialsImportFile) {
     materialsImportTrigger.addEventListener("click", () => materialsImportFile.click());
@@ -782,12 +769,6 @@ function bindEvents() {
   inventoryForm.addEventListener("submit", handleInventorySubmit);
   if (receiptUploadForm) {
     receiptUploadForm.addEventListener("submit", handleReceiptUploadSubmit);
-  }
-  if (packingSlipForm) {
-    packingSlipForm.addEventListener("submit", handlePackingSlipSubmit);
-  }
-  if (receiptVerifyForm) {
-    receiptVerifyForm.addEventListener("submit", handleReceiptVerifySubmit);
   }
   hardwareForm.addEventListener("submit", handleHardwareSubmit);
   if (merchForm) {
@@ -1212,7 +1193,7 @@ async function refreshAll() {
     await Promise.all([
       loadMaterials({ suppressReports: true }),
       loadInventory({ suppressReports: true }),
-      loadInboundInvoices(),
+      loadBusinessDocuments(),
       loadModels({ suppressReports: true }),
       loadHardware({ suppressReports: true }),
       loadOrderWorksJobs({ silent: true, suppressReports: true }).catch(() => null),
@@ -1289,25 +1270,23 @@ async function loadInventory({ suppressReports = false } = {}) {
   }
 }
 
-async function loadInboundInvoices() {
-  const invoices = await api("/inbound-invoices");
-  state.inboundInvoices = asArray(invoices);
-  renderInboundInvoices();
-  if (state.currentInboundInvoiceId) {
-    const active = state.inboundInvoices.find((invoice) => invoice.id === state.currentInboundInvoiceId);
+async function loadBusinessDocuments() {
+  const documents = await api("/business-documents");
+  state.businessDocuments = asArray(documents);
+  renderBusinessDocuments();
+  if (state.currentBusinessDocumentId) {
+    const active = state.businessDocuments.find((document) => document.id === state.currentBusinessDocumentId);
     if (active) {
-      renderInboundInvoiceDetail(active);
-      await loadReceiptAudit(active.id);
+      renderBusinessDocumentDetail(active);
       return;
     }
   }
-  if (state.inboundInvoices.length) {
-    state.currentInboundInvoiceId = state.inboundInvoices[0].id;
-    renderInboundInvoiceDetail(state.inboundInvoices[0]);
-    await loadReceiptAudit(state.inboundInvoices[0].id);
+  if (state.businessDocuments.length) {
+    state.currentBusinessDocumentId = state.businessDocuments[0].id;
+    renderBusinessDocumentDetail(state.businessDocuments[0]);
   } else {
-    state.currentInboundInvoiceId = null;
-    renderInboundInvoiceDetail(null);
+    state.currentBusinessDocumentId = null;
+    renderBusinessDocumentDetail(null);
   }
 }
 
@@ -2062,140 +2041,62 @@ function renderInventory() {
     .join("");
 }
 
-function renderInboundInvoices() {
+function renderBusinessDocuments() {
   if (!receiptsTableBody) {
     return;
   }
-  if (!state.inboundInvoices.length) {
-    receiptsTableBody.innerHTML = `<tr><td colspan="7" class="muted">No inbound receipts loaded yet.</td></tr>`;
+  if (!state.businessDocuments.length) {
+    receiptsTableBody.innerHTML = `<tr><td colspan="7" class="muted">No business documents uploaded yet.</td></tr>`;
     return;
   }
-  receiptsTableBody.innerHTML = state.inboundInvoices
-    .map((invoice) => {
-      const isSelected = invoice.id === state.currentInboundInvoiceId;
+  receiptsTableBody.innerHTML = state.businessDocuments
+    .map((document) => {
+      const isSelected = document.id === state.currentBusinessDocumentId;
       return `
         <tr class="${isSelected ? "is-selected" : ""}">
-          <td>${escapeHtml(formatTimestamp(invoice.uploaded_at))}</td>
-          <td>${escapeHtml(invoice.invoice_number || "-")}</td>
-          <td>${escapeHtml(formatOrderStatus(invoice.status || "-"))}</td>
-          <td>${escapeHtml(invoice.order_number || "-")}</td>
-          <td>${escapeHtml(formatQuantity(invoice.total_expected_grams || 0, "g"))}</td>
-          <td>${escapeHtml(formatQuantity(invoice.total_received_grams || 0, "g"))}</td>
-          <td><button type="button" data-receipt-select="${invoice.id}">Open</button></td>
+          <td>${escapeHtml(formatTimestamp(document.uploaded_at))}</td>
+          <td>${escapeHtml(document.display_name || "-")}</td>
+          <td>${escapeHtml(document.vendor || "-")}</td>
+          <td>${escapeHtml(document.receipt_date || "-")}</td>
+          <td>${escapeHtml(document.total || "-")}</td>
+          <td>${escapeHtml(document.source_filename || "-")}</td>
+          <td><button type="button" data-document-select="${document.id}">Open</button></td>
         </tr>
       `;
     })
     .join("");
-  receiptsTableBody.querySelectorAll("[data-receipt-select]").forEach((button) => {
+  receiptsTableBody.querySelectorAll("[data-document-select]").forEach((button) => {
     button.addEventListener("click", () => {
-      const id = Number(button.getAttribute("data-receipt-select"));
-      const invoice = state.inboundInvoices.find((entry) => entry.id === id);
-      if (!invoice) {
+      const id = Number(button.getAttribute("data-document-select"));
+      const document = state.businessDocuments.find((entry) => entry.id === id);
+      if (!document) {
         return;
       }
-      state.currentInboundInvoiceId = invoice.id;
-      renderInboundInvoices();
-      renderInboundInvoiceDetail(invoice);
-      safeAsync(() => loadReceiptAudit(invoice.id));
+      state.currentBusinessDocumentId = document.id;
+      renderBusinessDocuments();
+      renderBusinessDocumentDetail(document);
     });
   });
 }
 
-function renderInboundInvoiceDetail(invoice) {
-  if (!receiptDetailSummary || !receiptLinesTableBody) {
+function renderBusinessDocumentDetail(document) {
+  if (!receiptDetailSummary) {
     return;
   }
-  if (!invoice) {
-    receiptDetailSummary.innerHTML =
-      '<div class="muted">Select a receipt to review expected lines and verify packing slip quantities.</div>';
-    receiptLinesTableBody.innerHTML = `<tr><td colspan="5" class="muted">Select a receipt first.</td></tr>`;
-    if (receiptVerifyLocationInput) {
-      receiptVerifyLocationInput.value = "Receiving";
-    }
-    if (receiptAuditList) {
-      receiptAuditList.innerHTML = "Select a receipt to view audit events.";
-    }
-    if (receiptPrintLabelsBtn) {
-      receiptPrintLabelsBtn.disabled = true;
-    }
+  if (!document) {
+    receiptDetailSummary.innerHTML = '<div class="muted">Select a document to review scanned metadata.</div>';
     return;
   }
   receiptDetailSummary.innerHTML = `
     <div class="receipt-summary">
-      <div><strong>${escapeHtml(invoice.invoice_number)}</strong> · ${escapeHtml(invoice.vendor || "")}</div>
-      <div>Order ${escapeHtml(invoice.order_number || "-")} · Invoice date ${escapeHtml(invoice.invoice_date || "-")}</div>
-      <div>Status ${escapeHtml(formatOrderStatus(invoice.status || ""))} · Expected ${escapeHtml(
-        formatQuantity(invoice.total_expected_grams || 0, "g")
-      )} · Received ${escapeHtml(formatQuantity(invoice.total_received_grams || 0, "g"))}</div>
-      <div>Invoice file ${escapeHtml(invoice.source_filename || "-")} · Packing slip ${escapeHtml(
-        invoice.packing_slip_filename || "not uploaded"
-      )}</div>
+      <div><strong>${escapeHtml(document.display_name || "Business document")}</strong></div>
+      <div>Vendor ${escapeHtml(document.vendor || "-")} - Receipt date ${escapeHtml(document.receipt_date || "-")}</div>
+      <div>Total ${escapeHtml(document.total || "-")} - Uploaded ${escapeHtml(formatTimestamp(document.uploaded_at))}</div>
+      <div>Source file ${escapeHtml(document.source_filename || "-")}</div>
+      <div><a href="/business-documents/${document.id}/file" target="_blank" rel="noopener noreferrer">Open PDF</a></div>
     </div>
   `;
-  if (receiptVerifyLocationInput) {
-    receiptVerifyLocationInput.value = invoice.expected_location || "Receiving";
-  }
-  if (receiptPrintLabelsBtn) {
-    receiptPrintLabelsBtn.disabled = !invoice.verified_at;
-  }
-  receiptLinesTableBody.innerHTML = (invoice.lines || [])
-    .map(
-      (line) => `
-        <tr>
-          <td>${escapeHtml(line.sku || "-")}</td>
-          <td>${escapeHtml(`${line.product_name || ""} ${line.color || ""}`.trim())}</td>
-          <td>${escapeHtml(String(line.expected_quantity ?? 0))}</td>
-          <td>
-            <input
-              type="number"
-              min="0"
-              step="1"
-              data-receipt-line-id="${line.id}"
-              value="${escapeHtml(String(line.received_quantity ?? line.expected_quantity ?? 0))}"
-              ${invoice.verified_at ? "disabled" : ""}
-            />
-          </td>
-          <td>${escapeHtml(formatOrderStatus(line.status || "pending"))}</td>
-        </tr>
-      `
-    )
-    .join("");
 }
-
-async function loadReceiptAudit(invoiceId) {
-  if (!receiptAuditList || !invoiceId) {
-    return;
-  }
-  const events = await api(`/inbound-invoices/${invoiceId}/audit`);
-  renderReceiptAudit(asArray(events));
-}
-
-function renderReceiptAudit(events) {
-  if (!receiptAuditList) {
-    return;
-  }
-  if (!events.length) {
-    receiptAuditList.innerHTML = `<div class="muted">No audit events recorded yet.</div>`;
-    return;
-  }
-  receiptAuditList.innerHTML = `
-    <ul class="audit-list">
-      ${events
-        .map(
-          (event) => `
-            <li>
-              <strong>${escapeHtml(formatOrderStatus(event.event_type || ""))}</strong>
-              <span>${escapeHtml(formatTimestamp(event.created_at))}</span>
-              <span>${escapeHtml(event.actor_username || "unknown")} (${escapeHtml(event.actor_role || "-")})</span>
-              <div>${escapeHtml(event.summary || "")}</div>
-            </li>
-          `
-        )
-        .join("")}
-    </ul>
-  `;
-}
-
 function renderModels() {
   const filtered = filterModels(state.models);
   const { items, total, startIndex, endIndex, maxPage } = paginate(filtered, paginationState.models);
@@ -3139,23 +3040,15 @@ async function handleInventorySubmit(event) {
 async function handleReceiptUploadSubmit(event) {
   event.preventDefault();
   if (!receiptInvoiceFileInput?.files?.length) {
-    setMessage("Choose an invoice PDF first.", "error");
+    setMessage("Choose a receipt PDF first.", "error");
     return;
   }
   const formData = new FormData();
-  formData.append("invoice_pdf", receiptInvoiceFileInput.files[0]);
-  formData.append("expected_location", receiptLocationInput?.value || "Receiving");
-  formData.append("reorder_level", receiptReorderLevelInput?.value || "0");
-  await uploadApi("/inbound-invoices/upload", formData);
+  formData.append("document_pdf", receiptInvoiceFileInput.files[0]);
+  await uploadApi("/business-documents/upload", formData);
   receiptUploadForm.reset();
-  if (receiptLocationInput) {
-    receiptLocationInput.value = "Receiving";
-  }
-  if (receiptReorderLevelInput) {
-    receiptReorderLevelInput.value = "0";
-  }
-  await Promise.all([loadInboundInvoices(), loadMaterials()]);
-  setMessage("Inbound invoice uploaded. Expected inventory is now waiting for packing-slip verification.", "success");
+  await loadBusinessDocuments();
+  setMessage("Business document uploaded and scanned.", "success");
 }
 
 async function importCsvFile(kind, input) {
@@ -3184,62 +3077,6 @@ async function sendLowStockDigest() {
     `Low-stock digest sent to ${result.recipient_count} recipient(s): ${result.filament_count} filament and ${result.hardware_count} hardware alert(s).`,
     "success"
   );
-}
-
-function printCurrentReceiptLabels() {
-  if (!state.currentInboundInvoiceId) {
-    setMessage("Select a verified receipt first.", "error");
-    return;
-  }
-  window.open(`/inbound-invoices/${state.currentInboundInvoiceId}/barcode-labels`, "_blank", "noopener,noreferrer");
-}
-
-async function handlePackingSlipSubmit(event) {
-  event.preventDefault();
-  if (!state.currentInboundInvoiceId) {
-    setMessage("Select a receipt first.", "error");
-    return;
-  }
-  if (!receiptPackingSlipFileInput?.files?.length) {
-    setMessage("Choose a packing slip PDF first.", "error");
-    return;
-  }
-  const formData = new FormData();
-  formData.append("packing_slip_pdf", receiptPackingSlipFileInput.files[0]);
-  await uploadApi(`/inbound-invoices/${state.currentInboundInvoiceId}/packing-slip`, formData);
-  packingSlipForm.reset();
-  await loadInboundInvoices();
-  setMessage("Packing slip uploaded. Receipt is ready for verification.", "success");
-}
-
-async function handleReceiptVerifySubmit(event) {
-  event.preventDefault();
-  if (!state.currentInboundInvoiceId) {
-    setMessage("Select a receipt first.", "error");
-    return;
-  }
-  const invoice = state.inboundInvoices.find((entry) => entry.id === state.currentInboundInvoiceId);
-  if (!invoice) {
-    setMessage("Selected receipt could not be found.", "error");
-    return;
-  }
-  const lines = Array.from(receiptLinesTableBody.querySelectorAll("[data-receipt-line-id]")).map((input) => ({
-    line_id: Number(input.getAttribute("data-receipt-line-id")),
-    received_quantity: Number(input.value || 0),
-  }));
-  await api(`/inbound-invoices/${state.currentInboundInvoiceId}/verify`, {
-    method: "POST",
-    body: {
-      location: receiptVerifyLocationInput?.value || invoice.expected_location || "Receiving",
-      note: receiptVerifyNoteInput?.value || "",
-      lines,
-    },
-  });
-  if (receiptVerifyNoteInput) {
-    receiptVerifyNoteInput.value = "";
-  }
-  await Promise.all([loadInboundInvoices(), loadInventory(), loadMaterials()]);
-  setMessage("Receipt verified and inventory received.", "success");
 }
 
 async function handleHardwareSubmit(event) {

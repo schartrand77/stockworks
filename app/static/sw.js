@@ -1,4 +1,4 @@
-const CACHE_NAME = "stockworks-shell-v9";
+const CACHE_NAME = "stockworks-shell-v10";
 const CORE_ASSETS = [
   "/login",
   "/static/styles.css",
@@ -45,7 +45,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  if (url.pathname === "/static/app.js") {
+  if (url.pathname === "/static/app.js" || url.pathname === "/static/styles.css") {
     event.respondWith(networkFirst(request));
     return;
   }

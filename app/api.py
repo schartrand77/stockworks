@@ -30,6 +30,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from .barcodes import render_barcode_png
 from .bambu_invoice import DEFAULT_SUPPLIER, parse_invoice_pdf, resolve_upload_dir, store_upload
+from .business_docs import scan_business_document_pdf
 from .authz import Actor, resolve_actor, role_can
 from .printlab import (
     PrintLabAuthenticationError,
@@ -54,6 +55,8 @@ from .settings import (
 )
 from .models import (
     AppSetting,
+    BusinessDocument,
+    BusinessDocumentRead,
     HardwareItem,
     HardwareItemCreate,
     HardwareItemRead,
@@ -126,6 +129,7 @@ BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 PUBLIC_DIR = BASE_DIR.parent / "public"
 INBOUND_INVOICE_DIR = resolve_upload_dir(BASE_DIR.parent)
+BUSINESS_DOCUMENT_DIR = INBOUND_INVOICE_DIR.parent / "business_documents"
 MANIFEST_FILE = STATIC_DIR / "site.webmanifest"
 SERVICE_WORKER_FILE = STATIC_DIR / "sw.js"
 FAVICON_ICO_FILE = PUBLIC_DIR / "favicon.ico"
@@ -945,6 +949,65 @@ def delete_inventory_item(
     session.delete(item)
     session.commit()
     return None
+
+
+@app.get("/business-documents", response_model=List[BusinessDocumentRead])
+def list_business_documents(
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    session: Session = Depends(get_session),
+    _: bool = Depends(require_auth),
+):
+    statement = select(BusinessDocument).order_by(BusinessDocument.uploaded_at.desc()).offset(offset).limit(limit)
+    return session.exec(statement).all()
+
+
+@app.post("/business-documents/upload", response_model=BusinessDocumentRead, status_code=status.HTTP_201_CREATED)
+def upload_business_document(
+    document_pdf: UploadFile = File(...),
+    session: Session = Depends(get_session),
+    _: Actor = Depends(require_permission("receipts:write")),
+    _csrf: bool = Depends(require_csrf),
+):
+    filename = (document_pdf.filename or "").strip()
+    if not filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Business document upload must be a PDF.")
+    try:
+        source_filename, stored_path = store_upload(document_pdf, BUSINESS_DOCUMENT_DIR, "business-doc")
+        scanned = scan_business_document_pdf(Path(stored_path), source_filename=source_filename)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Unable to scan business document PDF: {exc}") from exc
+
+    document = BusinessDocument(
+        display_name=scanned.display_name,
+        vendor=scanned.vendor,
+        receipt_date=scanned.receipt_date,
+        total=scanned.total,
+        source_filename=source_filename,
+        file_path=stored_path,
+        document_type="receipt",
+    )
+    session.add(document)
+    session.commit()
+    session.refresh(document)
+    return document
+
+
+@app.get("/business-documents/{document_id}/file")
+def get_business_document_file(
+    document_id: int,
+    session: Session = Depends(get_session),
+    _: bool = Depends(require_auth),
+):
+    document = session.get(BusinessDocument, document_id)
+    if not document:
+        raise HTTPException(status_code=404, detail="Business document not found")
+    path = Path(document.file_path)
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail="Business document file not found")
+    return FileResponse(path, media_type="application/pdf", filename=document.source_filename or f"business-document-{document.id}.pdf")
 
 
 @app.get("/inbound-invoices", response_model=List[InboundInvoiceRead])

@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 
 from app.authz import Actor, resolve_actor, role_can
+from app.business_docs import scan_business_document_text
 from app.csv_tools import export_material_rows, parse_material_csv
 from app.email_digest import LowStockEntry, build_low_stock_digest, smtp_config_from_env
 from app.printlab import PrintLabClient
@@ -76,7 +77,48 @@ class PrintLabClientTests(unittest.TestCase):
         self.assertEqual(headers["Authorization"], f"Basic {expected}")
 
 
+class BusinessDocumentScanTests(unittest.TestCase):
+    def test_names_receipt_from_vendor_date_and_total(self):
+        text = """
+        Acme Filament Supply
+        Receipt
+        Date: 2026-05-12
+        Total $143.27
+        Thank you
+        """
+
+        result = scan_business_document_text(text, source_filename="upload.pdf")
+
+        self.assertEqual(result.vendor, "Acme Filament Supply")
+        self.assertEqual(result.receipt_date, "2026-05-12")
+        self.assertEqual(result.total, "$143.27")
+        self.assertEqual(result.display_name, "Acme Filament Supply - 2026-05-12 - $143.27")
+
+    def test_falls_back_to_cleaned_filename_when_metadata_is_incomplete(self):
+        result = scan_business_document_text("Receipt\nTotal $20.00", source_filename="shop receipt 42.pdf")
+
+        self.assertEqual(result.display_name, "shop receipt 42")
+
+
 class StaticAssetTests(unittest.TestCase):
+    def test_stylesheet_uses_suite_theme_without_legacy_dark_override(self):
+        css = Path("app/static/styles.css").read_text(encoding="utf-8")
+
+        self.assertIn("--sap-bg: #1f2026", css)
+        self.assertIn("--sap-accent: #20c465", css)
+        self.assertNotIn("@media (prefers-color-scheme: dark)", css)
+        self.assertNotIn("#050b18", css)
+
+    def test_service_worker_refreshes_stylesheet_after_theme_updates(self):
+        script = Path("app/static/sw.js").read_text(encoding="utf-8")
+
+        self.assertIn('const CACHE_NAME = "stockworks-shell-v10";', script)
+        self.assertIn('url.pathname === "/static/styles.css"', script)
+        self.assertLess(
+            script.index('url.pathname === "/static/styles.css"'),
+            script.index("event.respondWith(cacheFirst(request));"),
+        )
+
     def test_ams_slots_use_compact_dimensions_for_many_printers(self):
         css = Path("app/static/styles.css").read_text(encoding="utf-8")
 

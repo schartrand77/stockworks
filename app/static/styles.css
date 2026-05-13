@@ -7,73 +7,73 @@
 }
 
 :root {
-  color-scheme: light;
+  color-scheme: dark;
   font-size: 15px;
   line-height: 1.5;
   font-family: "Inter", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
   --sap-font: "Inter", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
-  --sap-bg: #f4f6fb;
-  --sap-surface: #ffffff;
-  --sap-surface-alt: #f8f9fc;
-  --sap-surface-muted: #eff2f8;
-  --sap-border: #d7dce3;
-  --sap-border-strong: #b6bdc8;
-  --sap-divider: #e6e9ef;
-  --sap-text: #1f2a37;
-  --sap-text-muted: #5f6b7c;
-  --sap-heading: #0f1f39;
-  --sap-primary: #0a6ed1;
-  --sap-primary-strong: #084f94;
-  --sap-primary-soft: #e1efff;
-  --sap-accent: #107e3e;
-  --sap-danger: #c6463a;
-  --sap-danger-soft: #fbe8e6;
-  --sap-shadow-soft: 0 10px 35px rgba(15, 31, 57, 0.08);
-  --sap-shadow-card: 0 8px 28px rgba(13, 27, 55, 0.08);
-  --sap-radius-lg: 18px;
-  --sap-radius-md: 12px;
-  --sap-radius-sm: 8px;
-  --sap-grid-line: rgba(32, 56, 88, 0.04);
-  --sap-scroll-track: rgba(15, 31, 57, 0.08);
-  --sap-scroll-thumb: rgba(15, 31, 57, 0.28);
-  --sap-page-gradient-start: #f8f9fc;
-  --sap-page-gradient-mid: #eef2f8;
-  --sap-page-gradient-end: #f4f6fb;
-  --sap-input-bg: #ffffff;
-  --sap-placeholder: #9aa4b3;
-  --sap-success-bg: #eef7f1;
-  --sap-table-wrapper-shadow: inset 0 1px 0 rgba(15, 31, 57, 0.03);
+  --sap-bg: #1f2026;
+  --sap-surface: #2b2d33;
+  --sap-surface-alt: #343741;
+  --sap-surface-muted: #50525c;
+  --sap-border: #444852;
+  --sap-border-strong: #5c606c;
+  --sap-divider: #444852;
+  --sap-text: #f3f5f7;
+  --sap-text-muted: #9aa0aa;
+  --sap-heading: #f3f5f7;
+  --sap-primary: #c6a34a;
+  --sap-primary-strong: #e1c56c;
+  --sap-primary-soft: rgba(198, 163, 74, 0.18);
+  --sap-accent: #20c465;
+  --sap-danger: #ff7c72;
+  --sap-danger-soft: rgba(255, 124, 114, 0.16);
+  --sap-shadow-soft: 0 18px 42px rgba(0, 0, 0, 0.3);
+  --sap-shadow-card: 0 12px 28px rgba(0, 0, 0, 0.28);
+  --sap-radius-lg: 8px;
+  --sap-radius-md: 6px;
+  --sap-radius-sm: 6px;
+  --sap-grid-line: rgba(154, 160, 170, 0.035);
+  --sap-scroll-track: rgba(26, 27, 32, 0.9);
+  --sap-scroll-thumb: rgba(154, 160, 170, 0.5);
+  --sap-page-gradient-start: #1f2026;
+  --sap-page-gradient-mid: #1f2026;
+  --sap-page-gradient-end: #1a1b20;
+  --sap-input-bg: #1a1b20;
+  --sap-placeholder: #757b86;
+  --sap-success-bg: rgba(32, 196, 101, 0.14);
+  --sap-table-wrapper-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --sap-bg: #050b18;
-  --sap-surface: #0f192a;
-  --sap-surface-alt: #101b2f;
-  --sap-surface-muted: #132237;
-  --sap-border: #1d2c44;
-  --sap-border-strong: #2c405d;
-  --sap-divider: #1a283f;
-  --sap-text: #e4ecfa;
-  --sap-text-muted: #8e9fbf;
-  --sap-heading: #f8fbff;
-  --sap-primary: #7bb7ff;
-  --sap-primary-strong: #c0deff;
-  --sap-primary-soft: rgba(123, 183, 255, 0.25);
-  --sap-accent: #5cd3b3;
+  --sap-bg: #1a1b20;
+  --sap-surface: #24262d;
+  --sap-surface-alt: #2b2d33;
+  --sap-surface-muted: #3c404a;
+  --sap-border: #444852;
+  --sap-border-strong: #686d78;
+  --sap-divider: #444852;
+  --sap-text: #f3f5f7;
+  --sap-text-muted: #aeb4bd;
+  --sap-heading: #ffffff;
+  --sap-primary: #c6a34a;
+  --sap-primary-strong: #f0d277;
+  --sap-primary-soft: rgba(198, 163, 74, 0.22);
+  --sap-accent: #20c465;
   --sap-danger: #ff8a7a;
   --sap-danger-soft: rgba(255, 138, 122, 0.18);
-  --sap-shadow-soft: 0 10px 35px rgba(0, 0, 0, 0.65);
-  --sap-shadow-card: 0 8px 28px rgba(0, 0, 0, 0.7);
-  --sap-grid-line: rgba(255, 255, 255, 0.04);
-  --sap-scroll-track: rgba(15, 22, 37, 0.7);
-  --sap-scroll-thumb: rgba(126, 147, 191, 0.5);
-  --sap-page-gradient-start: #050b18;
-  --sap-page-gradient-mid: #050c1e;
-  --sap-page-gradient-end: #040814;
-  --sap-input-bg: #0a1526;
-  --sap-placeholder: #7583a1;
-  --sap-success-bg: rgba(16, 126, 62, 0.2);
+  --sap-shadow-soft: 0 18px 42px rgba(0, 0, 0, 0.42);
+  --sap-shadow-card: 0 12px 28px rgba(0, 0, 0, 0.46);
+  --sap-grid-line: rgba(255, 255, 255, 0.035);
+  --sap-scroll-track: rgba(15, 16, 20, 0.85);
+  --sap-scroll-thumb: rgba(174, 180, 189, 0.48);
+  --sap-page-gradient-start: #1a1b20;
+  --sap-page-gradient-mid: #1f2026;
+  --sap-page-gradient-end: #15161b;
+  --sap-input-bg: #15161b;
+  --sap-placeholder: #858b96;
+  --sap-success-bg: rgba(32, 196, 101, 0.18);
   --sap-table-wrapper-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
@@ -86,7 +86,7 @@
 }
 
 ::selection {
-  background: rgba(10, 110, 209, 0.25);
+  background: rgba(198, 163, 74, 0.28);
   color: var(--sap-heading);
 }
 
@@ -153,7 +153,7 @@ body::after {
   align-items: center;
   gap: 0.4rem;
   padding: 0.35rem 1.1rem;
-  border-radius: 999px;
+  border-radius: var(--sap-radius-sm);
   border: 1px solid var(--sap-border);
   background: var(--sap-surface-alt);
   text-transform: uppercase;
@@ -166,7 +166,7 @@ body::after {
   content: "";
   width: 0.45rem;
   height: 0.45rem;
-  border-radius: 50%;
+  border-radius: 2px;
   background: var(--sap-primary);
 }
 
@@ -1103,7 +1103,7 @@ button.danger:hover {
   position: relative;
   width: 2.5rem;
   height: 2.5rem;
-  border-radius: 50%;
+  border-radius: var(--sap-radius-sm);
   border: 1px solid var(--sap-border);
   background: var(--sap-surface);
   color: var(--sap-heading);
@@ -1569,48 +1569,6 @@ th:last-child {
   background: var(--sap-primary-strong);
   color: #fff;
   text-decoration: none;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) {
-    color-scheme: dark;
-    --sap-bg: #050b18;
-    --sap-surface: #0f192a;
-    --sap-surface-alt: #101b2f;
-    --sap-surface-muted: #132237;
-    --sap-border: #1d2c44;
-    --sap-border-strong: #2c405d;
-    --sap-divider: #1a283f;
-    --sap-text: #e4ecfa;
-    --sap-text-muted: #8e9fbf;
-    --sap-heading: #f8fbff;
-    --sap-primary: #7bb7ff;
-    --sap-primary-strong: #c0deff;
-    --sap-primary-soft: rgba(123, 183, 255, 0.25);
-    --sap-accent: #5cd3b3;
-    --sap-danger: #ff8a7a;
-    --sap-danger-soft: rgba(255, 138, 122, 0.18);
-    --sap-shadow-soft: 0 10px 35px rgba(0, 0, 0, 0.65);
-    --sap-shadow-card: 0 8px 28px rgba(0, 0, 0, 0.7);
-    --sap-grid-line: rgba(255, 255, 255, 0.04);
-    --sap-scroll-track: rgba(15, 22, 37, 0.7);
-    --sap-scroll-thumb: rgba(126, 147, 191, 0.5);
-    --sap-page-gradient-start: #050b18;
-    --sap-page-gradient-mid: #050c1e;
-    --sap-page-gradient-end: #040814;
-    --sap-input-bg: #0a1526;
-    --sap-placeholder: #7583a1;
-    --sap-success-bg: rgba(16, 126, 62, 0.2);
-    --sap-table-wrapper-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  }
-
-  :root:not([data-theme]) body::after {
-    opacity: 0.35;
-  }
-
-  :root:not([data-theme]) .tab-nav {
-    box-shadow: none;
-  }
 }
 
 @media (max-width: 960px) {

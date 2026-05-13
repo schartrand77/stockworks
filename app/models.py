@@ -242,6 +242,26 @@ class InboundInvoiceVerifyRequest(SQLModel):
     lines: List[InboundInvoiceVerifyLine]
 
 
+class BusinessDocumentBase(SQLModel):
+    display_name: str = Field(index=True)
+    vendor: Optional[str] = Field(default=None, index=True)
+    receipt_date: Optional[str] = Field(default=None, index=True)
+    total: Optional[str] = None
+    source_filename: Optional[str] = None
+    file_path: str
+    document_type: str = Field(default="receipt", index=True)
+
+
+class BusinessDocument(BusinessDocumentBase, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    uploaded_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+
+
+class BusinessDocumentRead(BusinessDocumentBase):
+    id: int
+    uploaded_at: datetime
+
+
 class StockMovementBase(SQLModel):
     movement_type: str = Field(description="incoming, outgoing, or adjustment")
     change_grams: float = Field(description="Positive for inbound, negative for outbound")

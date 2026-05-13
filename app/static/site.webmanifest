@@ -10,8 +10,8 @@
   "display": "standalone",
   "display_override": ["standalone"],
   "orientation": "portrait-primary",
-  "background_color": "#f4f6fb",
-  "theme_color": "#0f1f39",
+  "background_color": "#1f2026",
+  "theme_color": "#1f2026",
   "categories": ["productivity", "business", "utilities"],
   "prefer_related_applications": false,
   "shortcuts": [
@@ -64,6 +64,26 @@
       "sizes": "1024x1024",
       "type": "image/png",
       "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/public/screenshots/swinventory.png",
+      "sizes": "1401x696",
+      "type": "image/png",
+      "label": "Inventory workspace"
+    },
+    {
+      "src": "/public/screenshots/swmaterials.png",
+      "sizes": "1416x715",
+      "type": "image/png",
+      "label": "Materials manager"
+    },
+    {
+      "src": "/public/screenshots/swreports.png",
+      "sizes": "1388x714",
+      "type": "image/png",
+      "label": "Reports dashboard"
     }
   ]
 }
