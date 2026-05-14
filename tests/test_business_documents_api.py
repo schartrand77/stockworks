@@ -51,6 +51,18 @@ class BusinessDocumentsApiTests(unittest.TestCase):
         listed = response.json()
         self.assertEqual(listed[0]["display_name"], "Acme Filament Supply - 2026-05-12 - $143.27")
 
+        response = self.client.get(f"/business-documents/{created['id']}/file", headers=self.headers)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("inline", response.headers["content-disposition"])
+        self.assertIn("receipt.pdf", response.headers["content-disposition"])
+
+        response = self.client.get(f"/business-documents/{created['id']}/file?download=1", headers=self.headers)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("attachment", response.headers["content-disposition"])
+        self.assertIn("receipt.pdf", response.headers["content-disposition"])
+
 
 if __name__ == "__main__":
     unittest.main()

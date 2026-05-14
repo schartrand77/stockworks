@@ -998,6 +998,7 @@ def upload_business_document(
 @app.get("/business-documents/{document_id}/file")
 def get_business_document_file(
     document_id: int,
+    download: bool = Query(default=False),
     session: Session = Depends(get_session),
     _: bool = Depends(require_auth),
 ):
@@ -1007,7 +1008,12 @@ def get_business_document_file(
     path = Path(document.file_path)
     if not path.exists() or not path.is_file():
         raise HTTPException(status_code=404, detail="Business document file not found")
-    return FileResponse(path, media_type="application/pdf", filename=document.source_filename or f"business-document-{document.id}.pdf")
+    return FileResponse(
+        path,
+        media_type="application/pdf",
+        filename=document.source_filename or f"business-document-{document.id}.pdf",
+        content_disposition_type="attachment" if download else "inline",
+    )
 
 
 @app.get("/inbound-invoices", response_model=List[InboundInvoiceRead])

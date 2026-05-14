@@ -376,6 +376,18 @@ body::after {
   color: var(--sap-heading);
 }
 
+.button-link.secondary {
+  font-weight: 600;
+  color: var(--sap-text-muted);
+}
+
+.table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+}
+
 .table-controls {
   display: flex;
   flex-wrap: wrap;

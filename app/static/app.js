@@ -2060,23 +2060,16 @@ function renderBusinessDocuments() {
           <td>${escapeHtml(document.receipt_date || "-")}</td>
           <td>${escapeHtml(document.total || "-")}</td>
           <td>${escapeHtml(document.source_filename || "-")}</td>
-          <td><button type="button" data-document-select="${document.id}">Open</button></td>
+          <td>
+            <div class="table-actions">
+              <a class="button-link" href="/business-documents/${document.id}/file" target="_blank" rel="noopener noreferrer" data-document-open="${document.id}">Open</a>
+              <a class="button-link secondary" href="/business-documents/${document.id}/file?download=1" download data-document-download="${document.id}">Download</a>
+            </div>
+          </td>
         </tr>
       `;
     })
     .join("");
-  receiptsTableBody.querySelectorAll("[data-document-select]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const id = Number(button.getAttribute("data-document-select"));
-      const document = state.businessDocuments.find((entry) => entry.id === id);
-      if (!document) {
-        return;
-      }
-      state.currentBusinessDocumentId = document.id;
-      renderBusinessDocuments();
-      renderBusinessDocumentDetail(document);
-    });
-  });
 }
 
 function renderBusinessDocumentDetail(document) {
@@ -2093,7 +2086,6 @@ function renderBusinessDocumentDetail(document) {
       <div>Vendor ${escapeHtml(document.vendor || "-")} - Receipt date ${escapeHtml(document.receipt_date || "-")}</div>
       <div>Total ${escapeHtml(document.total || "-")} - Uploaded ${escapeHtml(formatTimestamp(document.uploaded_at))}</div>
       <div>Source file ${escapeHtml(document.source_filename || "-")}</div>
-      <div><a href="/business-documents/${document.id}/file" target="_blank" rel="noopener noreferrer">Open PDF</a></div>
     </div>
   `;
 }

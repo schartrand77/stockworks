@@ -29,6 +29,7 @@ TOTAL_PATTERN = re.compile(
     r"(?P<total>\$?\s*-?\d{1,3}(?:,\d{3})*(?:\.\d{2})?)",
     re.IGNORECASE,
 )
+BAMBU_VENDOR_PATTERN = re.compile(r"\bBambu\s+Labs?(?:\s+CA)?\b", re.IGNORECASE)
 
 
 def extract_pdf_text(pdf_path: Path) -> str:
@@ -43,7 +44,7 @@ def scan_business_document_pdf(pdf_path: Path, source_filename: str) -> Business
 def scan_business_document_text(text: str, source_filename: str) -> BusinessDocumentScan:
     cleaned_lines = [_clean_spaces(line) for line in text.splitlines()]
     lines = [line for line in cleaned_lines if line]
-    vendor = _extract_vendor(lines)
+    vendor = _extract_known_vendor(text) or _extract_vendor(lines)
     receipt_date = _extract_date(text)
     total = _extract_total(text)
     if vendor and receipt_date and total:
@@ -56,6 +57,14 @@ def scan_business_document_text(text: str, source_filename: str) -> BusinessDocu
         total=total,
         display_name=display_name,
     )
+
+
+def _extract_known_vendor(text: str) -> Optional[str]:
+    match = BAMBU_VENDOR_PATTERN.search(text)
+    if not match:
+        return None
+    vendor = _clean_spaces(match.group(0))
+    return "Bambu Lab CA" if vendor.lower().endswith(" ca") else "Bambu Lab"
 
 
 def _extract_vendor(lines: list[str]) -> Optional[str]:

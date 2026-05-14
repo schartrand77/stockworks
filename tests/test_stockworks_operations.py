@@ -94,6 +94,20 @@ class BusinessDocumentScanTests(unittest.TestCase):
         self.assertEqual(result.total, "$143.27")
         self.assertEqual(result.display_name, "Acme Filament Supply - 2026-05-12 - $143.27")
 
+    def test_detects_bambu_lab_vendor_when_receipt_header_is_noisy(self):
+        text = """
+        Receipt
+        Order #US123456
+        Purchased from Bambu Lab
+        Date: 2026-05-12
+        Total $143.27
+        """
+
+        result = scan_business_document_text(text, source_filename="bambu receipt.pdf")
+
+        self.assertEqual(result.vendor, "Bambu Lab")
+        self.assertEqual(result.display_name, "Bambu Lab - 2026-05-12 - $143.27")
+
     def test_falls_back_to_cleaned_filename_when_metadata_is_incomplete(self):
         result = scan_business_document_text("Receipt\nTotal $20.00", source_filename="shop receipt 42.pdf")
 
@@ -133,6 +147,13 @@ class StaticAssetTests(unittest.TestCase):
         self.assertIsNotNone(spool_width)
         self.assertLessEqual(int(min_track.group("size")), 112)
         self.assertLessEqual(int(spool_width.group("size")), 38)
+
+    def test_receipt_document_actions_are_in_the_list(self):
+        script = Path("app/static/app.js").read_text(encoding="utf-8")
+
+        self.assertIn('data-document-open="${document.id}"', script)
+        self.assertIn('data-document-download="${document.id}"', script)
+        self.assertNotIn(">Open PDF</a>", script)
 
 
 if __name__ == "__main__":
