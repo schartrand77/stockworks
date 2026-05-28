@@ -1,5 +1,6 @@
 services:
   api:
+    container_name: stockworks
     build:
       context: .
       dockerfile: Dockerfile
@@ -29,3 +30,10 @@ services:
       PRINTLAB_API_AUTH_HEADER: ${PRINTLAB_API_AUTH_HEADER:-X-API-Key}
       PRINTLAB_TRACE: ${PRINTLAB_TRACE:-0}
     restart: unless-stopped
+    networks:
+      - makerworks-net
+
+networks:
+  makerworks-net:
+    name: makerworks-net
+    external: true
